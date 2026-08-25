@@ -1,0 +1,49 @@
+{
+  "name": "audio-translate-live",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "src/control-center"
+  ],
+  "files": [
+    ".env.example",
+    "bin/",
+    "extension/",
+    "scripts/",
+    "src/*.js",
+    "src/audio/",
+    "src/providers/",
+    "src/overlay/",
+    "src/control-center/dist/"
+  ],
+  "description": "Live translated subtitles for Chrome and Edge tab audio",
+  "main": "src/main-app.js",
+  "bin": {
+    "audiotranslate": "bin/audiotranslate.js"
+  },
+  "scripts": {
+    "build:control-center": "npm run build --workspace=audiotranslate-control-center",
+    "prestart": "npm run build:control-center",
+    "start": "node bin/audiotranslate.js start",
+    "headless": "node bin/audiotranslate.js start --headless",
+    "prepreview": "npm run build:control-center",
+    "preview": "node bin/audiotranslate.js preview",
+    "setup": "node bin/audiotranslate.js setup",
+    "providers": "node bin/audiotranslate.js providers",
+    "doctor": "node bin/audiotranslate.js doctor",
+    "check": "node scripts/check.js",
+    "test": "node --test",
+    "verify": "npm run check && npm test && npm run build:control-center",
+    "prepack": "npm run build:control-center",
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "dependencies": {
+    "@google/genai": "^2.14.0",
+    "electron": "^43.4.1",
+    "microsoft-cognitiveservices-speech-sdk": "^1.51.0",
+    "ws": "^8.21.3"
+  }
+}

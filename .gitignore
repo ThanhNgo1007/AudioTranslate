@@ -1,0 +1,34 @@
+# ── Secrets & Environment ────────────────────────────────────
+# .env chứa API key, token, region – KHÔNG BAO GIỜ commit.
+# Chỉ .env.example (placeholder trống) được track.
+.env
+.env.local
+.env.*.local
+.env.lock
+.env.lock.reclaim
+
+# ── Dependencies ─────────────────────────────────────────────
+node_modules/
+
+# ── Build artifacts ──────────────────────────────────────────
+dist/
+coverage/
+*.tsbuildinfo
+
+# ── Logs ─────────────────────────────────────────────────────
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# ── OS files ─────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ── Editor / IDE ─────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

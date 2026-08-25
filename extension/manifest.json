@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "AudioTranslate Live",
+  "description": "Capture the active Chrome or Edge tab and stream audio to the local subtitle overlay.",
+  "version": "0.1.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0AmsN7l48EE86oMaPSDueoWndzMdK7lkfTl4FbsYTqSnvJLuPjyvUGtR+7moZRyRbuMcJrPk/adhoAoW8pSsgyrxxAqEyoS8xT1VRN4hTJmZ/NFJ6P+t18Dt8SkhepT8XxfSc33MKPehvlw55hrjMsFIC/XU1A2rk1n2tSH2bGMqI8yEGo64sFRNBeE//8P+6l7ALHjVC1tYhvd0RFNt0mi3nbsZe3hWUdR1eFWhh6c8IUbF/HBktCUTSKrrqdHaW8PJLHEprmmlR8Axm4wwd3/h9D7iptBBwYclPF5ifSMdjL60+yu4U4EOO9SonjczAh/3N8NGCPGdArbWHmI0DwIDAQAB",
+  "minimum_chrome_version": "116",
+  "permissions": ["activeTab", "offscreen", "storage", "tabCapture"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "AudioTranslate Live",
+    "default_popup": "popup.html"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' ws://127.0.0.1:*"
+  }
+}

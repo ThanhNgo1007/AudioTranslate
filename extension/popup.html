@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AudioTranslate</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand-mark">A</div>
+      <div>
+        <h1>AudioTranslate</h1>
+        <p>Live subtitles for this tab</p>
+      </div>
+    </header>
+
+    <section id="status" class="status" data-level="idle">
+      <span class="status-dot"></span>
+      <div>
+        <strong id="status-title">Chưa bắt đầu</strong>
+        <span id="status-detail">Mở một video rồi nhấn Bắt đầu</span>
+      </div>
+    </section>
+
+    <section class="privacy" aria-live="polite">
+      <strong>Quyền riêng tư nguồn audio</strong>
+      <span id="privacy-detail"
+        >Chỉ capture tab sau khi bạn nhấn Bắt đầu. Audio chỉ rời máy sau khi local app được xác thực và provider cloud xác nhận phiên.</span
+      >
+    </section>
+
+    <section class="ownership-note">
+      <strong>Ngôn ngữ do Control Center quản lý</strong>
+      <span
+        >Chọn provider, ngôn ngữ nguồn/đích và cách hiển thị phụ đề trong ứng dụng desktop. Popup này chỉ cấp quyền capture tab và kết nối an toàn tới local app.</span
+      >
+    </section>
+
+    <details>
+      <summary>Kết nối nâng cao</summary>
+      <label>
+        Local WebSocket
+        <input id="endpoint" type="text" value="ws://127.0.0.1:43765" spellcheck="false" />
+      </label>
+      <label>
+        Mã ghép nối cục bộ
+        <input
+          id="pairing-token"
+          type="password"
+          autocomplete="off"
+          data-private="true"
+          placeholder="Dán mã từ Control Center"
+          spellcheck="false"
+        />
+        <small
+          >Mã chỉ lưu trong phiên trình duyệt, dùng để xác thực HMAC hai chiều và không được gửi trực tiếp qua WebSocket.</small
+        >
+      </label>
+    </details>
+
+    <div class="actions">
+      <button id="start-button" class="primary">Bắt đầu dịch tab này</button>
+      <button id="stop-button" class="danger hidden">Dừng</button>
+    </div>
+
+    <footer>
+      Chrome/Edge 116+ · provider đang chạy được xác nhận bởi local app trước khi gửi audio
+    </footer>
+    <script src="realtime-security.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

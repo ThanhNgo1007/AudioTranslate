@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AudioTranslate Overlay</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main id="overlay">
+      <div id="edit-toolbar" class="edit-toolbar hidden" aria-label="Điều chỉnh overlay">
+        <div class="drag-handle" tabindex="0" aria-label="Kéo để di chuyển overlay">
+          <span>Di chuyển overlay</span>
+        </div>
+        <div class="toolbar-actions">
+          <button id="preset-bottom" type="button">Dưới</button>
+          <button id="preset-top" type="button">Trên</button>
+          <button id="open-settings" type="button">Cài đặt</button>
+          <button id="lock-overlay" class="primary" type="button">Khóa overlay</button>
+        </div>
+      </div>
+      <div id="safe-guide" class="safe-guide hidden" aria-hidden="true"></div>
+      <div id="status" class="status">
+        <span id="status-dot" class="status-dot"></span>
+        <span id="status-text">Đang khởi động…</span>
+      </div>
+      <section id="caption-card" class="caption-card hidden">
+        <div id="final-lines" class="final-lines"></div>
+        <div id="partial-line" class="translation partial"></div>
+        <div id="source-line" class="source"></div>
+        <div class="meta-row">
+          <span id="draft-badge" class="badge hidden">NHÁP</span>
+          <span id="overflow-badge" class="badge overflow-badge hidden"></span>
+          <span id="latency" class="latency"></span>
+        </div>
+      </section>
+      <div id="final-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+    </main>
+    <script src="keyboard.js"></script>
+    <script src="caption-composer.js"></script>
+    <script src="renderer.js"></script>
+  </body>
+</html>
