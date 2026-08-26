@@ -28,6 +28,7 @@ const { DEMO_LINES } = require("./providers/demo");
 const {
   assertGenericDesktopPatch,
   beforeQuitAction,
+  configFromDesktopSettings,
   configureDesktopIdentity,
   controlWindowChromeOptions,
   desktopConfigFromArgs,
@@ -570,18 +571,10 @@ function publishSnapshot() {
 }
 
 function configFromSettings() {
-  return {
-    ...cliConfig,
-    provider: settings.provider,
-    sourceLanguage: settings.source.language,
-    sourceLanguageCandidates: settings.source.languageHints,
-    targetLanguage: settings.source.targetLanguage,
-    showSource: settings.overlay.showSource,
-    cloudConsent: settings.cloud.consent,
-    maxCloudMinutes: settings.cloud.maxMinutes,
+  return configFromDesktopSettings(cliConfig, settings, {
     authToken: configuredPairingToken(),
     geminiApiKey: configuredGeminiApiKey(),
-  };
+  });
 }
 
 function enqueueRuntime(task) {
@@ -803,6 +796,7 @@ function normalizeControlPatch(patch) {
   assertGenericDesktopPatch(patch);
   const next = {};
   if (isPlainRecord(patch.cloud)) next.cloud = patch.cloud;
+  if (isPlainRecord(patch.captions)) next.captions = patch.captions;
   if (isPlainRecord(patch.languages)) {
     next.source = {
       language: patch.languages.source,
@@ -824,6 +818,13 @@ function normalizeControlPatch(patch) {
   }
   if (isPlainRecord(patch.overlay)) {
     const overlay = { ...patch.overlay };
+    if (Object.hasOwn(overlay, "showSource")) {
+      next.captions = {
+        ...(next.captions || {}),
+        mode: overlay.showSource === true ? "bilingual" : "fastest",
+      };
+      delete overlay.showSource;
+    }
     if (overlay.fontSize !== undefined) overlay.translationFontSize = overlay.fontSize;
     if (overlay.clickThrough !== undefined) overlay.locked = overlay.clickThrough;
     delete overlay.fontSize;

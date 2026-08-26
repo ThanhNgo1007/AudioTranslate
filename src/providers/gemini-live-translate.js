@@ -191,6 +191,7 @@ class GeminiLiveTranslateTranslator {
       options.sourceLanguageCandidates,
     );
     this.targetLanguage = normalizeLanguage(options.targetLanguage, "target");
+    this.enableInputTranscription = options.enableInputTranscription === true;
     this.echoTargetLanguage = options.echoTargetLanguage !== false;
     this.enableSessionResumption = options.enableSessionResumption !== false;
     this.clientFactory = options.clientFactory || defaultClientFactory;

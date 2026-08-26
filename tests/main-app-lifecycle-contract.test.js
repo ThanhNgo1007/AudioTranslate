@@ -63,3 +63,12 @@ test("saved multi-display selection is exposed safely and triggers real overlay 
   assert.match(source, /resolveOverlayDisplay\(screen\.getAllDisplays\(\), settings\?\.overlay\?\.displayId, fallback\)/);
   assert.match(source, /Object\.hasOwn\(patch\.overlay, "displayId"\)/);
 });
+
+test("desktop wiring delegates caption profile config and accepts Control Center caption patches", () => {
+  const configBody = functionBody("configFromSettings", "enqueueRuntime");
+  assert.match(configBody, /configFromDesktopSettings/);
+
+  const patchBody = functionBody("normalizeControlPatch", "assertControlSender");
+  assert.match(patchBody, /isPlainRecord\(patch\.captions\)/);
+  assert.match(patchBody, /next\.captions\s*=\s*patch\.captions/);
+});

@@ -35,7 +35,7 @@
 - Test: `tests/main-app-lifecycle-contract.test.js`
 - Test: `tests/provider-factory.test.js`
 
-- [ ] **Step 1: Write failing settings tests**
+- [x] **Step 1: Write failing settings tests**
 
 Add assertions that fresh settings use the low-latency profile and that a saved legacy source toggle migrates without silently changing the user's preference:
 
@@ -55,13 +55,13 @@ assert.equal(migrated.overlay.showSource, true);
 
 Also test clamping of `resetGapMs` and `finalDebounceMs`, rejection of unknown modes, and that an explicit `captions.mode` wins over the legacy flag.
 
-- [ ] **Step 2: Run the settings test and confirm it fails**
+- [x] **Step 2: Run the settings test and confirm it fails**
 
 Run: `node --test tests/settings-store.test.js`
 
 Expected: FAIL because `captions` does not exist and `overlay.showSource` still defaults to true.
 
-- [ ] **Step 3: Implement settings version 2**
+- [x] **Step 3: Implement settings version 2**
 
 Add defaults:
 
@@ -79,7 +79,7 @@ overlay: {
 
 During sanitization, detect whether the raw input actually contains the legacy `overlay.showSource` property. If there is no valid explicit mode, map legacy `true` to `bilingual`; otherwise use `fastest`. Derive the sanitized `overlay.showSource` value from the selected mode so the old renderer contract remains coherent.
 
-- [ ] **Step 4: Write failing configuration/factory tests**
+- [x] **Step 4: Write failing configuration/factory tests**
 
 Add a pure `configFromDesktopSettings(cliConfig, settings, secrets)` helper to `desktop-control-policy.js`. Assert that it and the Gemini factory pass these explicit fields:
 
@@ -93,13 +93,13 @@ Add a pure `configFromDesktopSettings(cliConfig, settings, secrets)` helper to `
 
 For `bilingual`, assert `enableInputTranscription: true` and source display enabled. Add normalization tests for a Control Center patch under `captions`, and confirm profile-affecting changes require a runtime stop/restart. Keep `main-app.js` as wiring only and extend its source-contract test to ensure it calls the pure helper.
 
-- [ ] **Step 5: Run the focused tests and confirm they fail**
+- [x] **Step 5: Run the focused tests and confirm they fail**
 
 Run: `node --test tests/desktop-control-policy.test.js tests/main-app-lifecycle-contract.test.js tests/provider-factory.test.js tests/settings-store.test.js`
 
 Expected: FAIL on the new profile fields.
 
-- [ ] **Step 6: Thread the profile through the application**
+- [x] **Step 6: Thread the profile through the application**
 
 Implement and export the pure helper from `desktop-control-policy.js`, then call it from the existing `configFromSettings()` wrapper in `main-app.js`. Pass the settings as:
 
@@ -112,13 +112,13 @@ captionResetGapMs: settings.captions.resetGapMs,
 
 Update `settingsPatchRequiresRuntimeStop()` so changes to `captions.mode` or `captions.echoTargetLanguage` stop the current session safely. Do not restart automatically; retain the existing explicit Start flow.
 
-- [ ] **Step 7: Run focused tests**
+- [x] **Step 7: Run focused tests**
 
 Run: `node --test tests/desktop-control-policy.test.js tests/main-app-lifecycle-contract.test.js tests/provider-factory.test.js tests/settings-store.test.js`
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit the settings slice**
+- [x] **Step 8: Commit the settings slice**
 
 ```bash
 git add src/settings-store.js src/desktop-control-policy.js src/main-app.js src/provider-factory.js tests/settings-store.test.js tests/desktop-control-policy.test.js tests/main-app-lifecycle-contract.test.js tests/provider-factory.test.js

@@ -6,6 +6,49 @@ const test = require("node:test");
 
 const { SettingsStore, sanitizeSettings } = require("../src/settings-store");
 
+test("fresh settings default to the output-only low-latency caption profile", () => {
+  const settings = sanitizeSettings({});
+
+  assert.equal(settings.version, 2);
+  assert.deepEqual(settings.captions, {
+    mode: "fastest",
+    echoTargetLanguage: false,
+    resetGapMs: 1100,
+    finalDebounceMs: 120,
+  });
+  assert.equal(settings.overlay.showSource, false);
+});
+
+test("legacy source-caption settings migrate without overriding an explicit profile", () => {
+  const legacyBilingual = sanitizeSettings({ overlay: { showSource: true } });
+  assert.equal(legacyBilingual.captions.mode, "bilingual");
+  assert.equal(legacyBilingual.overlay.showSource, true);
+
+  const explicitFastest = sanitizeSettings({
+    captions: { mode: "fastest" },
+    overlay: { showSource: true },
+  });
+  assert.equal(explicitFastest.captions.mode, "fastest");
+  assert.equal(explicitFastest.overlay.showSource, false);
+
+  const invalid = sanitizeSettings({ captions: { mode: "turbo" } });
+  assert.equal(invalid.captions.mode, "fastest");
+});
+
+test("caption timing settings are finite integers within safe bounds", () => {
+  const settings = sanitizeSettings({
+    captions: {
+      echoTargetLanguage: true,
+      resetGapMs: -10,
+      finalDebounceMs: 9999,
+    },
+  });
+
+  assert.equal(settings.captions.echoTargetLanguage, true);
+  assert.equal(settings.captions.resetGapMs, 250);
+  assert.equal(settings.captions.finalDebounceMs, 1000);
+});
+
 test("sanitizeSettings clamps presentation values and strips unknown fields", () => {
   const value = sanitizeSettings({
     provider: "gemini",

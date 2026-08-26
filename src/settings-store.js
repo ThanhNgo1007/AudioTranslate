@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const SETTINGS_VERSION = 1;
+const SETTINGS_VERSION = 2;
 
 const DEFAULT_SETTINGS = Object.freeze({
   version: SETTINGS_VERSION,
@@ -16,10 +16,16 @@ const DEFAULT_SETTINGS = Object.freeze({
     consent: "",
     maxMinutes: 30,
   }),
+  captions: Object.freeze({
+    mode: "fastest",
+    echoTargetLanguage: false,
+    resetGapMs: 1100,
+    finalDebounceMs: 120,
+  }),
   overlay: Object.freeze({
     preset: "bottom",
     locked: true,
-    showSource: true,
+    showSource: false,
     highContrast: true,
     translationFontSize: 36,
     sourceFontSize: 17,
@@ -68,6 +74,7 @@ function sanitizeSettings(value = {}) {
   const defaults = cloneDefaults();
   const source = isPlainObject(value.source) ? value.source : {};
   const cloud = isPlainObject(value.cloud) ? value.cloud : {};
+  const captions = isPlainObject(value.captions) ? value.captions : {};
   const overlay = isPlainObject(value.overlay) ? value.overlay : {};
   const provider = ["demo", "azure", "gemini"].includes(value.provider)
     ? value.provider
@@ -84,6 +91,14 @@ function sanitizeSettings(value = {}) {
   const preset = ["bottom", "top", "floating"].includes(overlay.preset)
     ? overlay.preset
     : defaults.overlay.preset;
+  const explicitCaptionMode = ["fastest", "bilingual"].includes(captions.mode)
+    ? captions.mode
+    : null;
+  const legacySourcePreference = Object.hasOwn(overlay, "showSource")
+    ? overlay.showSource !== false
+    : null;
+  const captionMode = explicitCaptionMode ||
+    (legacySourcePreference === true ? "bilingual" : defaults.captions.mode);
 
   return {
     version: SETTINGS_VERSION,
@@ -93,10 +108,20 @@ function sanitizeSettings(value = {}) {
       consent,
       maxMinutes: Math.round(clampNumber(cloud.maxMinutes, defaults.cloud.maxMinutes, 1, 1440)),
     },
+    captions: {
+      mode: captionMode,
+      echoTargetLanguage: captions.echoTargetLanguage === true,
+      resetGapMs: Math.round(
+        clampNumber(captions.resetGapMs, defaults.captions.resetGapMs, 250, 5000),
+      ),
+      finalDebounceMs: Math.round(
+        clampNumber(captions.finalDebounceMs, defaults.captions.finalDebounceMs, 0, 1000),
+      ),
+    },
     overlay: {
       preset,
       locked: overlay.locked !== false,
-      showSource: overlay.showSource !== false,
+      showSource: captionMode === "bilingual",
       highContrast: overlay.highContrast !== false,
       translationFontSize: Math.round(
         clampNumber(overlay.translationFontSize, defaults.overlay.translationFontSize, 18, 64),
@@ -139,6 +164,10 @@ function mergeSettings(current, patch) {
     cloud: {
       ...(isPlainObject(safeCurrent.cloud) ? safeCurrent.cloud : {}),
       ...(isPlainObject(safePatch.cloud) ? safePatch.cloud : {}),
+    },
+    captions: {
+      ...(isPlainObject(safeCurrent.captions) ? safeCurrent.captions : {}),
+      ...(isPlainObject(safePatch.captions) ? safePatch.captions : {}),
     },
     overlay: {
       ...(isPlainObject(safeCurrent.overlay) ? safeCurrent.overlay : {}),

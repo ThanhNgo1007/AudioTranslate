@@ -75,7 +75,9 @@ function createProvider(config, sessionOptions, callbacks) {
       ...common,
       apiKey: config.geminiApiKey,
       model: config.geminiModel,
-      echoTargetLanguage: true,
+      enableInputTranscription: config.geminiInputTranscription === true,
+      echoTargetLanguage: config.geminiEchoTargetLanguage === true,
+      finalDebounceMs: config.geminiFinalDebounceMs,
       enableSessionResumption: config.geminiSessionResumption !== false,
     });
   }

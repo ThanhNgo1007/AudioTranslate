@@ -55,3 +55,37 @@ test("Gemini provider requires its own selected-audio consent", () => {
   );
   assert.equal(privacyMode.enableSessionResumption, false);
 });
+
+test("Gemini factory forwards the selected caption profile instead of forcing bilingual mode", () => {
+  const fastest = createProvider(
+    {
+      provider: "gemini",
+      geminiApiKey: "key",
+      cloudConsent: GEMINI_CLOUD_CONSENT,
+      geminiInputTranscription: false,
+      geminiEchoTargetLanguage: false,
+      geminiFinalDebounceMs: 120,
+    },
+    { sourceLanguage: "auto", sourceLanguageCandidates: [], targetLanguage: "vi" },
+    {},
+  );
+  assert.equal(fastest.enableInputTranscription, false);
+  assert.equal(fastest.echoTargetLanguage, false);
+  assert.equal(fastest.finalDebounceMs, 120);
+
+  const bilingual = createProvider(
+    {
+      provider: "gemini",
+      geminiApiKey: "key",
+      cloudConsent: GEMINI_CLOUD_CONSENT,
+      geminiInputTranscription: true,
+      geminiEchoTargetLanguage: true,
+      geminiFinalDebounceMs: 240,
+    },
+    { sourceLanguage: "en-US", sourceLanguageCandidates: [], targetLanguage: "vi" },
+    {},
+  );
+  assert.equal(bilingual.enableInputTranscription, true);
+  assert.equal(bilingual.echoTargetLanguage, true);
+  assert.equal(bilingual.finalDebounceMs, 240);
+});

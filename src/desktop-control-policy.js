@@ -26,6 +26,29 @@ function desktopConfigFromArgs(argv, getConfig) {
   };
 }
 
+function configFromDesktopSettings(cliConfig = {}, settings = {}, secrets = {}) {
+  const source = settings?.source || {};
+  const cloud = settings?.cloud || {};
+  const captions = settings?.captions || {};
+  const overlay = settings?.overlay || {};
+  return {
+    ...cliConfig,
+    provider: settings?.provider || cliConfig.provider,
+    sourceLanguage: source.language || "auto",
+    sourceLanguageCandidates: Array.isArray(source.languageHints) ? source.languageHints : [],
+    targetLanguage: source.targetLanguage || "vi",
+    showSource: captions.mode === "bilingual" && overlay.showSource !== false,
+    cloudConsent: cloud.consent || "",
+    maxCloudMinutes: cloud.maxMinutes,
+    authToken: String(secrets.authToken || ""),
+    geminiApiKey: String(secrets.geminiApiKey || ""),
+    geminiInputTranscription: captions.mode === "bilingual",
+    geminiEchoTargetLanguage: captions.echoTargetLanguage === true,
+    geminiFinalDebounceMs: captions.finalDebounceMs,
+    captionResetGapMs: captions.resetGapMs,
+  };
+}
+
 function controlWindowChromeOptions(platform = process.platform) {
   return {
     frame: false,
@@ -166,6 +189,12 @@ function settingsPatchRequiresRuntimeStop(runtimeActive, patch = {}, currentSett
   if (!runtimeActive || !patch || typeof patch !== "object") return false;
   if (patch.source && typeof patch.source === "object") return true;
   if (patch.languages && typeof patch.languages === "object") return true;
+  if (patch.captions && typeof patch.captions === "object") return true;
+  if (
+    patch.overlay &&
+    typeof patch.overlay === "object" &&
+    Object.hasOwn(patch.overlay, "showSource")
+  ) return true;
   if (patch.cloud && typeof patch.cloud === "object") {
     const nextConsent = Object.hasOwn(patch.cloud, "consent")
       ? patch.cloud.consent
@@ -248,6 +277,7 @@ module.exports = {
   beforeQuitAction,
   configureDesktopIdentity,
   controlWindowChromeOptions,
+  configFromDesktopSettings,
   desktopConfigFromArgs,
   desktopEditMenuTemplate,
   desktopSettingsMigrationPatch,

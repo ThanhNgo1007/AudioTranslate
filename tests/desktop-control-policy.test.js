@@ -6,6 +6,7 @@ const {
   beforeQuitAction,
   configureDesktopIdentity,
   controlWindowChromeOptions,
+  configFromDesktopSettings,
   desktopEditMenuTemplate,
   desktopSettingsMigrationPatch,
   assertGenericDesktopPatch,
@@ -21,6 +22,37 @@ const {
   shouldOpenDesktopGateway,
   settingsPatchRequiresRuntimeStop,
 } = require("../src/desktop-control-policy");
+
+test("desktop settings produce explicit Gemini low-latency provider options", () => {
+  const config = configFromDesktopSettings(
+    { host: "127.0.0.1", geminiModel: "gemini-test" },
+    {
+      provider: "gemini",
+      source: { language: "auto", languageHints: ["en-US"], targetLanguage: "vi" },
+      cloud: { consent: "gemini:audio:v1", maxMinutes: 15 },
+      captions: {
+        mode: "fastest",
+        echoTargetLanguage: false,
+        resetGapMs: 1100,
+        finalDebounceMs: 120,
+      },
+      overlay: { showSource: false },
+    },
+    { authToken: "local-pairing", geminiApiKey: "cloud-secret" },
+  );
+
+  assert.equal(config.provider, "gemini");
+  assert.equal(config.sourceLanguage, "auto");
+  assert.deepEqual(config.sourceLanguageCandidates, ["en-US"]);
+  assert.equal(config.targetLanguage, "vi");
+  assert.equal(config.geminiInputTranscription, false);
+  assert.equal(config.geminiEchoTargetLanguage, false);
+  assert.equal(config.geminiFinalDebounceMs, 120);
+  assert.equal(config.captionResetGapMs, 1100);
+  assert.equal(config.showSource, false);
+  assert.equal(config.authToken, "local-pairing");
+  assert.equal(config.geminiApiKey, "cloud-secret");
+});
 
 test("desktop pairing reuses an environment token without persisting or exposing it", () => {
   const environmentToken = "environment-pairing-token-123456789";
@@ -124,9 +156,25 @@ test("provider start policy runs Demo as a synthetic preview and gates Gemini cl
 
 test("active runtime stops before source, language, or consent changes become visible", () => {
   assert.equal(settingsPatchRequiresRuntimeStop(false, { source: { language: "ja-JP" } }, {}), false);
-  assert.equal(settingsPatchRequiresRuntimeStop(true, { overlay: { showSource: false } }, {}), false);
+  assert.equal(settingsPatchRequiresRuntimeStop(true, { overlay: { showSource: false } }, {}), true);
   assert.equal(settingsPatchRequiresRuntimeStop(true, { source: { language: "ja-JP" } }, {}), true);
   assert.equal(settingsPatchRequiresRuntimeStop(true, { source: { kind: "file" } }, {}), true);
+  assert.equal(
+    settingsPatchRequiresRuntimeStop(
+      true,
+      { captions: { mode: "bilingual" } },
+      { captions: { mode: "fastest" } },
+    ),
+    true,
+  );
+  assert.equal(
+    settingsPatchRequiresRuntimeStop(
+      true,
+      { captions: { echoTargetLanguage: true } },
+      { captions: { echoTargetLanguage: false } },
+    ),
+    true,
+  );
   assert.equal(
     settingsPatchRequiresRuntimeStop(
       true,
