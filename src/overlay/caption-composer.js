@@ -6,8 +6,9 @@
   "use strict";
 
   const DEFAULT_MAX_LINES = 2;
-  const DEFAULT_MAX_GRAPHEMES = 42;
+  const DEFAULT_MAX_GRAPHEMES = 52;
   const DEFAULT_PAGE_DURATION_MS = 2200;
+  const CLOSING_PUNCTUATION = /^[,.;:!?…。！？、，；：%)\]}»”’]+$/u;
 
   function positiveInteger(value, fallback) {
     return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
@@ -154,6 +155,186 @@
         graphemeCount: graphemes.length,
         maxLines,
         maxGraphemesPerLine,
+      }),
+    });
+  }
+
+  function measuredWidth(measureText, value) {
+    try {
+      const measurement = measureText(String(value ?? ""));
+      const width =
+        typeof measurement === "number" ? measurement : Number(measurement?.width);
+      return Number.isFinite(width) && width >= 0 ? width : Number.NaN;
+    } catch {
+      return Number.NaN;
+    }
+  }
+
+  function wordSegments(value) {
+    const text = String(value ?? "");
+    if (!text) return [];
+    if (typeof Intl === "object" && typeof Intl.Segmenter === "function") {
+      try {
+        const segmenter = new Intl.Segmenter(undefined, { granularity: "word" });
+        return Array.from(segmenter.segment(text), ({ segment }) => segment);
+      } catch {
+        // Continue with the exact-text fallback below.
+      }
+    }
+    return text.match(/\s+|[^\s]+/gu) || [];
+  }
+
+  function detachTrailingUnit(value) {
+    const raw = String(value ?? "");
+    const trailingWhitespace = raw.match(/\s+$/u)?.[0] || "";
+    const body = trailingWhitespace ? raw.slice(0, -trailingWhitespace.length) : raw;
+    const spacedWord = body.match(/\s+(\S+)$/u);
+    if (spacedWord) {
+      const tail = `${spacedWord[1]}${trailingWhitespace}`;
+      return {
+        head: raw.slice(0, raw.length - tail.length),
+        tail,
+      };
+    }
+
+    const graphemes = splitGraphemes(body);
+    if (graphemes.length < 2) return null;
+    return {
+      head: graphemes.slice(0, -1).join(""),
+      tail: `${graphemes.at(-1)}${trailingWhitespace}`,
+    };
+  }
+
+  function measuredPage(rawLines, index) {
+    const lines = rawLines.map((line) => line.trim());
+    return Object.freeze({
+      index,
+      rawText: rawLines.join(""),
+      text: lines.join("\n"),
+      lines: Object.freeze(lines),
+      rawLines: Object.freeze([...rawLines]),
+      graphemeCount: rawLines.reduce((total, line) => total + graphemeCount(line), 0),
+    });
+  }
+
+  function measuredFallback(rawText, maxLines, options) {
+    const fallback = composeText(rawText, {
+      maxLines,
+      maxGraphemesPerLine: positiveInteger(
+        options.fallbackMaxGraphemesPerLine,
+        DEFAULT_MAX_GRAPHEMES,
+      ),
+    });
+    return Object.freeze({
+      ...fallback,
+      qc: Object.freeze({
+        ...fallback.qc,
+        measurement: "grapheme-fallback",
+      }),
+    });
+  }
+
+  function composeMeasuredText(value, options = {}) {
+    const rawText = String(value ?? "");
+    const maxLines = Math.min(
+      DEFAULT_MAX_LINES,
+      positiveInteger(options.maxLines, DEFAULT_MAX_LINES),
+    );
+    const maxWidth = Number(options.maxWidth);
+    const measureText = options.measureText;
+    if (
+      !Number.isFinite(maxWidth) ||
+      maxWidth <= 0 ||
+      typeof measureText !== "function" ||
+      !Number.isFinite(measuredWidth(measureText, "M"))
+    ) {
+      return measuredFallback(rawText, maxLines, options);
+    }
+
+    const widthCache = new Map();
+    function widthOf(rawLine) {
+      const displayLine = String(rawLine ?? "").trim();
+      if (!displayLine) return 0;
+      if (!widthCache.has(displayLine)) {
+        widthCache.set(displayLine, measuredWidth(measureText, displayLine));
+      }
+      return widthCache.get(displayLine);
+    }
+    function fits(rawLine) {
+      const width = widthOf(rawLine);
+      return Number.isFinite(width) && width <= maxWidth + 0.01;
+    }
+
+    const rawLines = [];
+    let line = "";
+    function pushLine() {
+      if (!line) return;
+      rawLines.push(line);
+      line = "";
+    }
+    function appendAtGraphemeBoundaries(token) {
+      for (const grapheme of splitGraphemes(token)) {
+        const candidate = `${line}${grapheme}`;
+        if (!line || fits(candidate)) {
+          line = candidate;
+          continue;
+        }
+        pushLine();
+        line = grapheme;
+      }
+    }
+
+    for (const token of wordSegments(rawText)) {
+      if (fits(`${line}${token}`)) {
+        line += token;
+        continue;
+      }
+
+      if (line.trim() && CLOSING_PUNCTUATION.test(token)) {
+        const detached = detachTrailingUnit(line);
+        if (
+          detached &&
+          detached.head.trim() &&
+          fits(`${detached.tail}${token}`)
+        ) {
+          line = detached.head;
+          pushLine();
+          line = `${detached.tail}${token}`;
+          continue;
+        }
+      }
+
+      if (line.trim() && fits(token)) {
+        pushLine();
+        line = token;
+        continue;
+      }
+
+      appendAtGraphemeBoundaries(token);
+    }
+    pushLine();
+
+    const pages = [];
+    for (let index = 0; index < rawLines.length; index += maxLines) {
+      pages.push(measuredPage(rawLines.slice(index, index + maxLines), pages.length));
+    }
+    const overflow = pages.length > 1;
+    const rollingPage = rawLines.length
+      ? measuredPage(rawLines.slice(-maxLines), Math.max(0, pages.length - 1))
+      : null;
+    return Object.freeze({
+      rawText,
+      pages: Object.freeze(pages),
+      rollingPage,
+      qc: Object.freeze({
+        overflow,
+        needsReview: overflow,
+        reasons: Object.freeze(overflow ? ["caption-overflow"] : []),
+        pageCount: pages.length,
+        graphemeCount: graphemeCount(rawText),
+        maxLines,
+        maxWidth,
+        measurement: "pixel",
       }),
     });
   }
@@ -367,6 +548,7 @@
 
   return Object.freeze({
     composeCaption,
+    composeMeasuredText,
     composeText,
     createCaptionPager,
     createCaptionVisibilityController,

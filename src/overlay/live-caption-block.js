@@ -61,7 +61,7 @@
   }
 
   function createLiveCaptionBlock(options = {}) {
-    const resetGapMs = normalizeResetGap(options.resetGapMs);
+    let resetGapMs = normalizeResetGap(options.resetGapMs);
     const now = typeof options.now === "function" ? options.now : Date.now;
     let committedPrefix = "";
     let mutableSuffix = "";
@@ -108,7 +108,9 @@
       let page = pageIndex >= 0 ? pages[pageIndex] : null;
       const maxLines = Number(candidate?.qc?.maxLines);
       const maxGraphemesPerLine = Number(candidate?.qc?.maxGraphemesPerLine);
-      if (
+      if (pageCount > 1 && candidate?.rollingPage) {
+        page = normalizePage(candidate.rollingPage, pageIndex);
+      } else if (
         pageCount > 1 &&
         Number.isSafeInteger(maxLines) &&
         maxLines > 0 &&
@@ -209,6 +211,11 @@
       return compose(paginate);
     }
 
+    function setResetGapMs(value) {
+      resetGapMs = normalizeResetGap(value);
+      return snapshot();
+    }
+
     function clear() {
       committedPrefix = "";
       mutableSuffix = "";
@@ -251,7 +258,7 @@
       });
     }
 
-    return Object.freeze({ apply, clear, reflow, snapshot });
+    return Object.freeze({ apply, clear, reflow, setResetGapMs, snapshot });
   }
 
   return Object.freeze({ appendText, createLiveCaptionBlock });

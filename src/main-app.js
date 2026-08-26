@@ -190,7 +190,10 @@ function applyOverlaySettings({ reposition = false } = {}) {
     overlayWindow.setBounds(bounds, true);
   }
   overlayWindow.webContents.send("overlay:interaction", { clickThrough: locked });
-  overlayWindow.webContents.send("overlay:preferences", settings.overlay);
+  overlayWindow.webContents.send("overlay:preferences", {
+    ...settings.overlay,
+    captionResetGapMs: settings.captions?.resetGapMs,
+  });
   rebuildTrayMenu();
 }
 

@@ -361,13 +361,13 @@ git commit -m "feat: add continuous live caption state"
 - Test: `tests/caption-composer.test.js`
 - Test: `tests/overlay-renderer.test.js`
 
-- [ ] **Step 1: Write failing measured-wrap tests**
+- [x] **Step 1: Write failing measured-wrap tests**
 
 Add `composeMeasuredText(text, options)` tests using a deterministic fake `measureText` function. Cover Vietnamese whitespace, long English words, CJK text without spaces, emoji/grapheme clusters, punctuation attachment, and exactly two lines per page.
 
 Assert the fallback path uses 52 graphemes per line when no valid pixel width or measurement function is available.
 
-- [ ] **Step 2: Write failing renderer integration tests**
+- [x] **Step 2: Write failing renderer integration tests**
 
 With a minimal fake DOM/canvas, assert:
 
@@ -377,25 +377,25 @@ With a minimal fake DOM/canvas, assert:
 - resize/font changes trigger `reflow()`;
 - a render report includes `sessionId`, `sequence`, `isFinal`, `rafAt`, and `resultToRafMs` but no caption text.
 
-- [ ] **Step 3: Run focused tests and confirm they fail**
+- [x] **Step 3: Run focused tests and confirm they fail**
 
 Run: `node --test tests/caption-composer.test.js tests/overlay-renderer.test.js`
 
 Expected: FAIL because wrapping is fixed at 42 graphemes and the renderer replaces each result.
 
-- [ ] **Step 4: Implement pixel-aware composition**
+- [x] **Step 4: Implement pixel-aware composition**
 
 Use `Intl.Segmenter` for word segmentation when available and grapheme segmentation as the safe fallback. Accumulate tokens while `measureText(candidate).width <= maxWidth`; split an overlong token only at grapheme boundaries. Return pages containing at most two lines.
 
 Keep the current grapheme composer as a fallback, but change its default to 52 graphemes per line. Do not count UTF-16 code units.
 
-- [ ] **Step 5: Integrate the live caption state in the renderer**
+- [x] **Step 5: Integrate the live caption state in the renderer**
 
 Create one offscreen canvas context and derive its font from the computed caption style. The paginator must use the actual caption container width after horizontal padding. Feed every caption event to `liveCaptionBlock.apply()` and render its snapshot immediately.
 
 On resize or relevant overlay settings changes, update the measurement font/width and call `reflow()`. Keep CSS to two visible lines as a defensive presentation bound, not as the primary truncation mechanism.
 
-- [ ] **Step 6: Run focused tests**
+- [x] **Step 6: Run focused tests**
 
 Run: `node --test tests/caption-composer.test.js tests/live-caption-block.test.js tests/overlay-renderer.test.js`
 
