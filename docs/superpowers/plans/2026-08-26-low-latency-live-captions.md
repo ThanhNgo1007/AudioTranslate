@@ -299,7 +299,7 @@ git commit -m "feat: warm Gemini before tab capture"
 - Modify: `src/overlay/index.html`
 - Test: `tests/live-caption-block.test.js`
 
-- [ ] **Step 1: Write failing deterministic state tests**
+- [x] **Step 1: Write failing deterministic state tests**
 
 Instantiate the state machine with an injected clock and paginator. Cover:
 
@@ -313,13 +313,13 @@ Instantiate the state machine with an injected clock and paginator. Cover:
 8. Duplicate/out-of-order sequence numbers are ignored.
 9. `reflow()` preserves semantic text while recalculating pages for a changed width/font.
 
-- [ ] **Step 2: Run the new test and confirm it fails**
+- [x] **Step 2: Run the new test and confirm it fails**
 
 Run: `node --test tests/live-caption-block.test.js`
 
 Expected: FAIL because the module does not exist.
 
-- [ ] **Step 3: Implement a pure UMD/CommonJS-compatible module**
+- [x] **Step 3: Implement a pure UMD/CommonJS-compatible module**
 
 Export:
 
@@ -332,17 +332,17 @@ Maintain `committedPrefix`, `mutableSuffix`, `lastFinalAt`, `sessionId`, `genera
 
 Use the provided paginator as the sole overflow authority. If combined text spans multiple two-line pages, show the last complete page and retain only the text necessary for future continuation. Do not use CSS clipping as data loss control.
 
-- [ ] **Step 4: Load the module before the overlay renderer**
+- [x] **Step 4: Load the module before the overlay renderer**
 
 Add `live-caption-block.js` to `src/overlay/index.html` before `renderer.js`, preserving the current no-bundler overlay startup.
 
-- [ ] **Step 5: Run the state tests**
+- [x] **Step 5: Run the state tests**
 
 Run: `node --test tests/live-caption-block.test.js`
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit the state-machine slice**
+- [x] **Step 6: Commit the state-machine slice**
 
 ```bash
 git add src/overlay/live-caption-block.js src/overlay/index.html tests/live-caption-block.test.js
