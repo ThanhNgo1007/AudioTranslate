@@ -221,7 +221,7 @@ git commit -m "feat: optimize Gemini Live output transcription"
 - Test: `tests/gateway-lifecycle.test.js`
 - Test: `tests/gateway.integration.test.js`
 
-- [ ] **Step 1: Write failing lifecycle tests**
+- [x] **Step 1: Write failing lifecycle tests**
 
 Test a small dependency-injected coordinator with this exact order:
 
@@ -236,7 +236,7 @@ assert.deepEqual(events, [
 
 Also assert that `get-tab-stream-id` is never called when preparation fails, and that a failure after preparation invokes `cancelPreparedSession()` exactly once.
 
-- [ ] **Step 2: Strengthen security regression tests**
+- [x] **Step 2: Strengthen security regression tests**
 
 Extend the offscreen VM test to prove:
 
@@ -245,13 +245,13 @@ Extend the offscreen VM test to prove:
 - PCM remains bounded and cannot be sent before readiness;
 - Stop closes both a prepared-only session and an attached capture session.
 
-- [ ] **Step 3: Run focused tests and confirm they fail**
+- [x] **Step 3: Run focused tests and confirm they fail**
 
 Run: `node --test tests/capture-lifecycle.test.js tests/extension-security.test.js tests/gateway-lifecycle.test.js tests/gateway.integration.test.js`
 
 Expected: FAIL because capture currently starts before the local WebSocket/provider connection.
 
-- [ ] **Step 4: Add the prepare/attach coordinator**
+- [x] **Step 4: Add the prepare/attach coordinator**
 
 Expose a browser/global helper with an injectable function interface:
 
@@ -266,23 +266,23 @@ prepareThenAttach({
 
 Load it before `background.js` in the MV3 service worker. In `background.js`, send `capture:prepare`, await provider-ready, only then call `chrome.tabCapture.getMediaStreamId()`, and finally send `capture:attach` with the one-time stream ID.
 
-- [ ] **Step 5: Split offscreen capture into two phases**
+- [x] **Step 5: Split offscreen capture into two phases**
 
 `prepareCapture(settings)` must authenticate the local WebSocket, send `start`, and resolve only on gateway `started`. `attachCapture(streamId)` must then call `getUserMedia()`, build the audio graph, and begin PCM flow. Keep `capture:start` as a compatibility wrapper that calls both phases for older callers/tests.
 
 Use a single pending preparation promise, reject it on socket close/error/timeout, and make Stop idempotent. Do not reconnect per utterance.
 
-- [ ] **Step 6: Report provider preparation time in the gateway**
+- [x] **Step 6: Report provider preparation time in the gateway**
 
 Measure from immediately before `provider.start()` to its resolution. Include `providerPrepareMs` in the `started` acknowledgement and emit it as a metrics event. This is provider preparation latency, not a network SLA.
 
-- [ ] **Step 7: Run focused tests**
+- [x] **Step 7: Run focused tests**
 
 Run: `node --test tests/capture-lifecycle.test.js tests/extension-security.test.js tests/gateway-lifecycle.test.js tests/gateway.integration.test.js`
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit the warm-start slice**
+- [x] **Step 8: Commit the warm-start slice**
 
 ```bash
 git add extension/capture-lifecycle.js extension/background.js extension/offscreen.js extension/manifest.json src/gateway.js tests/capture-lifecycle.test.js tests/extension-security.test.js tests/gateway-lifecycle.test.js tests/gateway.integration.test.js

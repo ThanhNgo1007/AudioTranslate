@@ -217,6 +217,7 @@ test("gateway configuration owns language and transcript settings", async () => 
       showSource: false,
     }),
     {
+      now: () => 1000,
       providerFactory: (_config, session, providerCallbacks) => {
         sessionOptions = session;
         callbacks = providerCallbacks;
@@ -253,9 +254,38 @@ test("gateway configuration owns language and transcript settings", async () => 
       provider: "gemini",
       sessionId: "session-1",
       maxCloudMinutes: 0,
+      providerPrepareMs: 0,
     },
   );
   assert.equal(socket.sent.find((message) => message.type === "caption").showSource, false);
+  await gateway.close();
+});
+
+test("gateway measures provider preparation before acknowledging started", async () => {
+  let now = 1000;
+  const metrics = [];
+  const gateway = new RealtimeGateway(baseConfig({ provider: "gemini" }), {
+    now: () => now,
+    providerFactory: () => ({
+      async start() {
+        now = 1375;
+      },
+      async stop() {},
+      write() {},
+    }),
+  });
+  gateway.on("metrics", (event) => metrics.push(event));
+  const socket = fakeSocket();
+
+  await gateway.handleMessage(socket, startControl(), false);
+
+  const started = socket.sent.find((message) => message.type === "started");
+  assert.equal(started.providerPrepareMs, 375);
+  assert.deepEqual(metrics, [{
+    type: "runtime-metrics",
+    sessionId: started.sessionId,
+    providerPrepareMs: 375,
+  }]);
   await gateway.close();
 });
 

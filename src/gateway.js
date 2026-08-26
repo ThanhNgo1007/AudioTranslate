@@ -570,6 +570,7 @@ class RealtimeGateway extends EventEmitter {
       callbacks,
     );
     this.activeSession = session;
+    const providerPrepareStartedAt = Number(this.now());
     try {
       await session.provider.start();
     } catch (error) {
@@ -582,6 +583,11 @@ class RealtimeGateway extends EventEmitter {
       );
       throw failure;
     }
+    const providerPreparedAt = Number(this.now());
+    session.providerPrepareMs =
+      Number.isFinite(providerPrepareStartedAt) && Number.isFinite(providerPreparedAt)
+        ? Math.max(0, Math.round(providerPreparedAt - providerPrepareStartedAt))
+        : null;
     if (this.activeSession !== session || socket.readyState !== WebSocket.OPEN) {
       if (this.activeSession === session) this.activeSession = null;
       await session.provider.stop().catch(() => {});
@@ -612,6 +618,13 @@ class RealtimeGateway extends EventEmitter {
       sessionId: session.id,
     };
     this.emit("status", status);
+    if (session.providerPrepareMs !== null) {
+      this.emit("metrics", {
+        type: "runtime-metrics",
+        sessionId: session.id,
+        providerPrepareMs: session.providerPrepareMs,
+      });
+    }
     this.send(socket, {
       type: "started",
       sourceLanguage,
@@ -620,6 +633,7 @@ class RealtimeGateway extends EventEmitter {
       provider: this.config.provider,
       sessionId: session.id,
       maxCloudMinutes: this.config.maxCloudMinutes || 0,
+      providerPrepareMs: session.providerPrepareMs,
     });
   }
 
