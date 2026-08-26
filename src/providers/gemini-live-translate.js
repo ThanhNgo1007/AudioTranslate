@@ -1,13 +1,21 @@
 const DEFAULT_MODEL = "gemini-3.5-live-translate-preview";
 const INPUT_MIME_TYPE = "audio/pcm;rate=16000";
 const AUDIO_CHUNK_BYTES = 3200;
-const DEFAULT_FINAL_DEBOUNCE_MS = 300;
+const DEFAULT_FINAL_DEBOUNCE_MS = 120;
 const DEFAULT_STARTUP_TIMEOUT_MS = 15000;
 const DEFAULT_MAX_BUFFERED_AUDIO_BYTES = 64 * 1024;
 const MAX_SECRET_LENGTH = 16 * 1024;
 const MAX_RESUMPTION_HANDLE_LENGTH = 64 * 1024;
 const MAX_TRANSCRIPT_CHARS = 64 * 1024;
 const MAX_FRAGMENT_OVERLAP_CHARS = 1024;
+const USAGE_COUNTER_FIELDS = Object.freeze([
+  "promptTokenCount",
+  "responseTokenCount",
+  "totalTokenCount",
+  "cachedContentTokenCount",
+  "thoughtsTokenCount",
+  "toolUsePromptTokenCount",
+]);
 
 const secrets = new WeakMap();
 
@@ -98,6 +106,43 @@ function sanitizedError(error, sensitiveValues, fallbackMessage = "Gemini Live T
   clean.name = redact(source.name || "Error", sensitiveValues);
   if (source.code !== undefined) clean.code = redact(source.code, sensitiveValues);
   return clean;
+}
+
+function isQuotaExhausted(error) {
+  const nested = error?.error instanceof Error ? error.error : null;
+  const code = nested?.code ?? error?.code ?? nested?.status ?? error?.status;
+  const detail = [nested?.message, error?.message, nested?.name, error?.name, code]
+    .filter((value) => value !== undefined && value !== null)
+    .join(" ");
+  return Number(code) === 429 || /RESOURCE_EXHAUSTED|GEMINI_FREE_TIER_QUOTA|\b429\b/i.test(detail);
+}
+
+function publicGeminiError(error, sensitiveValues) {
+  const clean = sanitizedError(error, sensitiveValues);
+  if (!isQuotaExhausted(error) && !isQuotaExhausted(clean)) return clean;
+  const quota = new Error(
+    "Gemini Free Tier đã hết hạn mức hoặc đang giới hạn tốc độ. Hãy chờ rồi thử lại hoặc kiểm tra quota trong Google AI Studio; AudioTranslate đã dừng an toàn và không tự động chuyển sang dịch vụ trả phí.",
+  );
+  quota.name = "GeminiQuotaError";
+  quota.code = "GEMINI_FREE_TIER_QUOTA";
+  return quota;
+}
+
+function normalizeUsageMetadata(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const normalized = {};
+  for (const field of USAGE_COUNTER_FIELDS) {
+    const candidate = value[field];
+    if (
+      typeof candidate === "number" &&
+      Number.isFinite(candidate) &&
+      candidate >= 0 &&
+      candidate <= Number.MAX_SAFE_INTEGER
+    ) {
+      normalized[field] = Math.round(candidate);
+    }
+  }
+  return Object.keys(normalized).length > 0 ? normalized : null;
 }
 
 function audioBufferFrom(value) {
@@ -192,7 +237,7 @@ class GeminiLiveTranslateTranslator {
     );
     this.targetLanguage = normalizeLanguage(options.targetLanguage, "target");
     this.enableInputTranscription = options.enableInputTranscription === true;
-    this.echoTargetLanguage = options.echoTargetLanguage !== false;
+    this.echoTargetLanguage = options.echoTargetLanguage === true;
     this.enableSessionResumption = options.enableSessionResumption !== false;
     this.clientFactory = options.clientFactory || defaultClientFactory;
     if (typeof this.clientFactory !== "function") {
@@ -204,6 +249,7 @@ class GeminiLiveTranslateTranslator {
     this.onError = options.onError;
     this.onTerminal = options.onTerminal;
     this.onLanguageDetected = options.onLanguageDetected;
+    this.onUsage = options.onUsage;
 
     this.startupTimeoutMs = positiveInteger(
       options.startupTimeoutMs,
@@ -271,6 +317,7 @@ class GeminiLiveTranslateTranslator {
       outputFinished: false,
       serverBoundaryObserved: false,
       lastCapturedAt: null,
+      firstPartialEmittedAt: null,
     };
   }
 
@@ -312,7 +359,7 @@ class GeminiLiveTranslateTranslator {
     } catch (error) {
       // Keep a local reference until startup settles so a concurrent stop can
       // wipe the WeakMap without making a late startup error leak the key.
-      const clean = sanitizedError(error, [apiKey, secrets.get(this).resumptionHandle]);
+      const clean = publicGeminiError(error, [apiKey, secrets.get(this).resumptionHandle]);
       if (this.state !== "stopping" && this.state !== "stopped") this.state = "stopped";
       if (this.state === "stopped") {
         this.client = null;
@@ -330,11 +377,14 @@ class GeminiLiveTranslateTranslator {
       this.sourceLanguage === "auto"
         ? this.sourceLanguageCandidates
         : [this.sourceLanguage];
-    const inputAudioTranscription =
-      languageCodes.length > 0 ? { languageCodes } : {};
     const config = {
       responseModalities: [this.modalityAudio],
-      inputAudioTranscription,
+      ...(this.enableInputTranscription
+        ? {
+            inputAudioTranscription:
+              languageCodes.length > 0 ? { languageCodes } : {},
+          }
+        : {}),
       outputAudioTranscription: {},
       translationConfig: {
         targetLanguageCode: this.targetLanguage,
@@ -485,6 +535,8 @@ class GeminiLiveTranslateTranslator {
     if (!message || typeof message !== "object") return;
 
     this.handleResumptionUpdate(message.sessionResumptionUpdate);
+    const usage = normalizeUsageMetadata(message.usageMetadata);
+    if (usage) this.onUsage?.(usage);
     const content = message.serverContent;
     if (content && typeof content === "object") this.handleServerContent(content);
     if (message.goAway) {
@@ -514,6 +566,7 @@ class GeminiLiveTranslateTranslator {
 
   handleServerContent(content) {
     if (this.paused) return;
+    const hadOutputBeforeMessage = Boolean(String(this.turn.output || "").trim());
     const input = content.inputTranscription;
     const interimInput = content.interimInputTranscription;
     const output = content.outputTranscription;
@@ -556,7 +609,11 @@ class GeminiLiveTranslateTranslator {
       hasAuthoritativeBoundary &&
       String(this.turn.output || "").trim()
     ) {
-      this.scheduleFinal();
+      const boundaryCanFinalizeNow =
+        serverBoundaryObserved &&
+        (hadOutputBeforeMessage || Boolean(String(output?.text || "")) || output?.finished === true);
+      if (boundaryCanFinalizeNow) this.finalizeTurn();
+      else this.scheduleFinal();
     }
   }
 
@@ -621,6 +678,13 @@ class GeminiLiveTranslateTranslator {
     const latencyMs = Number.isFinite(capturedAt)
       ? Math.max(0, Math.round(emittedAt - capturedAt))
       : null;
+    if (!isFinal && this.turn.firstPartialEmittedAt === null) {
+      this.turn.firstPartialEmittedAt = emittedAt;
+    }
+    const partialToFinalMs =
+      isFinal && Number.isFinite(this.turn.firstPartialEmittedAt)
+        ? Math.max(0, Math.round(emittedAt - this.turn.firstPartialEmittedAt))
+        : null;
     const autoDetected = this.sourceLanguage === "auto";
     this.onCaption?.({
       type: "caption",
@@ -635,6 +699,7 @@ class GeminiLiveTranslateTranslator {
       isFinal,
       emittedAt,
       latencyMs,
+      ...(!isFinal ? { liveEdgeToPartialMs: latencyMs } : { partialToFinalMs }),
       provider: "gemini-live-translate",
     });
   }
@@ -643,6 +708,10 @@ class GeminiLiveTranslateTranslator {
     if (epoch !== this.connectionEpoch || this.isStopping() || this.terminalSignaled) return;
     const clean = this.cleanError(event);
     this.onError?.(clean);
+    if (clean.code === "GEMINI_FREE_TIER_QUOTA") {
+      this.signalTerminal(clean);
+      return;
+    }
     if (this.state === "running") this.beginReconnect("Gemini Live transport error", clean);
   }
 
@@ -705,7 +774,7 @@ class GeminiLiveTranslateTranslator {
 
   cleanError(error) {
     const secret = secrets.get(this);
-    return sanitizedError(error, [secret.apiKey, secret.resumptionHandle]);
+    return publicGeminiError(error, [secret.apiKey, secret.resumptionHandle]);
   }
 
   signalTerminal(error) {

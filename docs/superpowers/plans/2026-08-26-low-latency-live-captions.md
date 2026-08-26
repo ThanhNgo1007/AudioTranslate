@@ -136,7 +136,7 @@ git commit -m "feat: add low-latency caption profiles"
 - Test: `tests/gemini-live-translate.test.js`
 - Test: `tests/provider-factory.test.js`
 
-- [ ] **Step 1: Write failing Gemini configuration tests**
+- [x] **Step 1: Write failing Gemini configuration tests**
 
 Capture the config sent to `client.live.connect()` and assert:
 
@@ -148,7 +148,7 @@ assert.equal(config.translationConfig.echoTargetLanguage, false);
 
 Add the inverse bilingual test, where `inputAudioTranscription` exists and contains a fixed source language only when one was explicitly selected. Auto-detect must not be simulated by sending a broad `languageCodes` list in Fastest mode.
 
-- [ ] **Step 2: Write failing event/error tests**
+- [x] **Step 2: Write failing event/error tests**
 
 Cover all of the following:
 
@@ -160,13 +160,13 @@ Cover all of the following:
 - `usageMetadata` is forwarded through an `onUsage` callback after allow-list normalization;
 - errors containing HTTP 429 or `RESOURCE_EXHAUSTED` map to a clear Free Tier quota message and do not select another provider.
 
-- [ ] **Step 3: Run the provider tests and confirm they fail**
+- [x] **Step 3: Run the provider tests and confirm they fail**
 
 Run: `node --test tests/gemini-live-translate.test.js tests/provider-factory.test.js`
 
 Expected: FAIL for conditional transcription, usage metadata, timing fields, and quota mapping.
 
-- [ ] **Step 4: Implement conditional Gemini configuration**
+- [x] **Step 4: Implement conditional Gemini configuration**
 
 Build the Live config without an `inputAudioTranscription` key unless `enableInputTranscription` is true:
 
@@ -184,7 +184,7 @@ const config = {
 
 Keep SDK-default compression behavior beyond the existing sliding-window opt-in; do not add speculative trigger-token tuning.
 
-- [ ] **Step 5: Implement timing, finalization, usage, and quota handling**
+- [x] **Step 5: Implement timing, finalization, usage, and quota handling**
 
 Track `firstPartialEmittedAt` per turn. Emit partials synchronously from the message handler. If the server supplies an authoritative completion marker, cancel the final timer and emit final now; otherwise schedule only the final state change using `finalDebounceMs`.
 
@@ -192,13 +192,13 @@ Normalize usage to numeric allow-listed fields such as prompt/input, response/ou
 
 Add an error helper that recognizes numeric/string 429 and `RESOURCE_EXHAUSTED`, returning a Vietnamese message that tells Free Tier users to wait or inspect AI Studio quota. Leave provider selection unchanged.
 
-- [ ] **Step 6: Run focused tests**
+- [x] **Step 6: Run focused tests**
 
 Run: `node --test tests/gemini-live-translate.test.js tests/provider-factory.test.js`
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit the provider slice**
+- [x] **Step 7: Commit the provider slice**
 
 ```bash
 git add src/providers/gemini-live-translate.js src/provider-factory.js tests/gemini-live-translate.test.js tests/provider-factory.test.js
