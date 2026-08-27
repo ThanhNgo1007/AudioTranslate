@@ -71,4 +71,40 @@ test("desktop wiring delegates caption profile config and accepts Control Center
   const patchBody = functionBody("normalizeControlPatch", "assertControlSender");
   assert.match(patchBody, /isPlainRecord\(patch\.captions\)/);
   assert.match(patchBody, /next\.captions\s*=\s*patch\.captions/);
+  assert.match(patchBody, /isPlainRecord\(patch\.translation\)/);
+  assert.match(patchBody, /next\.translation\s*=\s*patch\.translation/);
+});
+
+test("desktop startup reports whether Gemini uses direct or contextual translation", () => {
+  const body = functionBody("startRuntime", "stopRuntime");
+  assert.match(body, /settings\.translation\.mode/);
+  assert.match(body, /Live Translate/);
+  assert.match(body, /Live Transcribe/);
+});
+
+test("provider snapshot reports the selected direct model or contextual model route", () => {
+  const body = functionBody("controlSnapshot", "publishSnapshot");
+  assert.match(body, /settings\?\.translation\?\.mode/);
+  assert.match(body, /transcriptionModel/);
+  assert.match(body, /textModel/);
+  assert.match(body, /geminiModel/);
+});
+
+test("desktop aggregates gateway, usage and renderer timing without caption payloads", () => {
+  assert.match(source, /new RollingRuntimeMetrics\(\{ maxSamples: 120 \}\)/);
+  const gatewayBody = functionBody("replaceGateway", "startRuntime");
+  assert.match(gatewayBody, /nextGateway\.on\("metrics"/);
+  assert.match(gatewayBody, /nextGateway\.on\("usage"/);
+  assert.match(gatewayBody, /runtimeMetrics\.recordUsage/);
+
+  const startBody = functionBody("startRuntime", "stopRuntime");
+  assert.match(startBody, /runtimeMetrics\.reset\(\)/);
+
+  const ipcStart = source.indexOf("function registerIpc");
+  const ipcBody = source.slice(ipcStart, source.indexOf("function startPreview", ipcStart));
+  assert.match(
+    ipcBody,
+    /ipcMain\.on\("overlay:rendered",[\s\S]*?runtimeMetrics\.record\("resultToRafMs"/,
+  );
+  assert.doesNotMatch(ipcBody, /runtimeMetrics\.record\([^,]+,\s*metrics\.(?:text|caption|transcript|audio|data|bytes)/i);
 });

@@ -4,6 +4,7 @@ const { WebSocket, WebSocketServer } = require("ws");
 const { AudioTelemetryAggregator } = require("./audio/audio-telemetry");
 const { createProvider, getProviderCapabilities } = require("./provider-factory");
 const { PROTOCOL_VERSION, decodeAudioFrame, safeParseControl } = require("./protocol");
+const { RUNTIME_METRIC_FIELDS, USAGE_COUNTER_FIELDS } = require("./runtime-metrics");
 
 const MAX_AUDIO_AGE_MS = 1000;
 const HEARTBEAT_INTERVAL_MS = 15000;
@@ -203,6 +204,23 @@ function sanitizeLanguageDetection(detection) {
     detectionLatencyMs,
     ...(detection?.updated === true ? { updated: true } : {}),
   };
+}
+
+function numericAllowlist(value, fields) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const sanitized = {};
+  for (const field of fields) {
+    const number = value[field];
+    if (
+      typeof number === "number" &&
+      Number.isFinite(number) &&
+      number >= 0 &&
+      number <= Number.MAX_SAFE_INTEGER
+    ) {
+      sanitized[field] = Math.round(number);
+    }
+  }
+  return Object.keys(sanitized).length > 0 ? sanitized : null;
 }
 
 class RealtimeGateway extends EventEmitter {
@@ -429,8 +447,26 @@ class RealtimeGateway extends EventEmitter {
         droppedFrames: session.droppedFrames,
         queueMs: ageMs,
       });
-      if (telemetry) this.emitTelemetry(session, telemetry);
-      session.provider.write(frame.pcm, frame);
+      if (telemetry) {
+        session.provider.setAudioActivity?.({
+          rms: telemetry.rms,
+          peak: telemetry.peak,
+          speech: telemetry.speech === true,
+          silenceMs: telemetry.silenceMs,
+          packetGapCount: telemetry.packetGapCount,
+          droppedFrames: telemetry.droppedFrames,
+          queueMs: telemetry.queueMs,
+          updatedAt: telemetry.updatedAt,
+        });
+        this.emitTelemetry(session, telemetry);
+      }
+      const accepted = session.provider.write(frame.pcm, frame) !== false;
+      if (accepted && session.firstAudioCapturedAt === null && Number.isFinite(frame.capturedAt)) {
+        session.firstAudioCapturedAt = frame.capturedAt;
+      }
+      if (accepted && Number.isFinite(ageMs)) {
+        this.emitRuntimeMetrics(session, { localQueueMs: Math.max(0, ageMs) });
+      }
       return;
     }
 
@@ -521,10 +557,35 @@ class RealtimeGateway extends EventEmitter {
         now: this.now,
         intervalMs: this.telemetryIntervalMs,
       }),
+      firstAudioCapturedAt: null,
+      firstReadableRecorded: false,
     };
     const callbacks = {
       onCaption: (caption) => {
         if (this.activeSession !== session || session.paused) return;
+        const metrics = {};
+        const liveEdgeToPartialMs = Number.isFinite(caption?.liveEdgeToPartialMs)
+          ? caption.liveEdgeToPartialMs
+          : caption?.latencyMs;
+        if (Number.isFinite(liveEdgeToPartialMs)) {
+          metrics.liveEdgeToPartialMs = liveEdgeToPartialMs;
+        }
+        if (Number.isFinite(caption?.partialToFinalMs)) {
+          metrics.partialToFinalMs = caption.partialToFinalMs;
+        }
+        if (
+          !session.firstReadableRecorded &&
+          Number.isFinite(session.firstAudioCapturedAt) &&
+          String(caption?.translation || "").trim()
+        ) {
+          const emittedAt = Number(caption?.emittedAt);
+          const readableAt = Number.isFinite(emittedAt) ? emittedAt : Number(this.now());
+          if (Number.isFinite(readableAt)) {
+            metrics.firstReadableMs = Math.max(0, readableAt - session.firstAudioCapturedAt);
+            session.firstReadableRecorded = true;
+          }
+        }
+        this.emitRuntimeMetrics(session, metrics);
         const payload = {
           ...caption,
           type: "caption",
@@ -561,6 +622,10 @@ class RealtimeGateway extends EventEmitter {
         };
         this.emit("language", payload);
         this.send(socket, payload);
+      },
+      onUsage: (usage) => {
+        if (this.activeSession !== session) return;
+        this.emitRuntimeUsage(session, usage);
       },
     };
 
@@ -619,11 +684,7 @@ class RealtimeGateway extends EventEmitter {
     };
     this.emit("status", status);
     if (session.providerPrepareMs !== null) {
-      this.emit("metrics", {
-        type: "runtime-metrics",
-        sessionId: session.id,
-        providerPrepareMs: session.providerPrepareMs,
-      });
+      this.emitRuntimeMetrics(session, { providerPrepareMs: session.providerPrepareMs });
     }
     this.send(socket, {
       type: "started",
@@ -684,6 +745,31 @@ class RealtimeGateway extends EventEmitter {
     const payload = { type: "audio-telemetry", sessionId: session.id, ...telemetry };
     this.emit("telemetry", payload);
     this.send(session.socket, payload);
+  }
+
+  emitRuntimeMetrics(session, value) {
+    if (this.activeSession !== session) return false;
+    const metrics = numericAllowlist(value, RUNTIME_METRIC_FIELDS);
+    if (!metrics) return false;
+    this.emit("metrics", {
+      type: "runtime-metrics",
+      sessionId: session.id,
+      ...metrics,
+    });
+    return true;
+  }
+
+  emitRuntimeUsage(session, value) {
+    if (this.activeSession !== session) return false;
+    const usage = numericAllowlist(value, USAGE_COUNTER_FIELDS);
+    if (!usage) return false;
+    this.emit("usage", {
+      type: "runtime-usage",
+      sessionId: session.id,
+      mode: "session-total",
+      usage,
+    });
+    return true;
   }
 
   emitTelemetryReset(session) {

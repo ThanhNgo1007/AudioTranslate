@@ -89,3 +89,54 @@ test("Gemini factory forwards the selected caption profile instead of forcing bi
   assert.equal(bilingual.echoTargetLanguage, true);
   assert.equal(bilingual.finalDebounceMs, 240);
 });
+
+test("Gemini factory keeps direct Live Translate for fastest and routes contextual modes", () => {
+  const commonConfig = {
+    provider: "gemini",
+    geminiApiKey: "key",
+    cloudConsent: GEMINI_CLOUD_CONSENT,
+  };
+  const session = {
+    sourceLanguage: "auto",
+    sourceLanguageCandidates: ["en-US", "ja-JP"],
+    targetLanguage: "vi",
+  };
+
+  const fastest = createProvider(
+    { ...commonConfig, geminiTranslationMode: "fastest" },
+    session,
+    {},
+  );
+  assert.equal(fastest.constructor.name, "GeminiLiveTranslateTranslator");
+
+  const balanced = createProvider(
+    {
+      ...commonConfig,
+      geminiTranslationMode: "balanced",
+      geminiTranscriptionModel: "transcribe-test",
+      geminiTextModel: "flash-lite-test",
+      geminiContextTurns: 5,
+      geminiPartialThrottleMs: 600,
+      geminiGlossary: "council = hội đồng",
+      geminiCharacterContext: "Alex: older sister of Sam.",
+    },
+    session,
+    {},
+  );
+  assert.equal(balanced.constructor.name, "GeminiContextualTranslator");
+  assert.equal(balanced.mode, "balanced");
+  assert.equal(balanced.transcriptionModel, "transcribe-test");
+  assert.equal(balanced.textModel, "flash-lite-test");
+  assert.equal(balanced.contextTurns, 5);
+  assert.equal(balanced.partialThrottleMs, 600);
+  assert.equal(balanced.glossary, "council = hội đồng");
+  assert.equal(balanced.characterContext, "Alex: older sister of Sam.");
+
+  const accurate = createProvider(
+    { ...commonConfig, geminiTranslationMode: "accurate" },
+    session,
+    {},
+  );
+  assert.equal(accurate.constructor.name, "GeminiContextualTranslator");
+  assert.equal(accurate.mode, "accurate");
+});

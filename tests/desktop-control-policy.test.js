@@ -36,6 +36,16 @@ test("desktop settings produce explicit Gemini low-latency provider options", ()
         resetGapMs: 1100,
         finalDebounceMs: 120,
       },
+      translation: {
+        mode: "balanced",
+        transcriptionModel: "gemini-transcribe-test",
+        textModel: "gemini-flash-lite-test",
+        contextTurns: 5,
+        partialThrottleMs: 600,
+        glossary: "council = hội đồng",
+        characterContext: "Alex: older sister of Sam.",
+        unknown: "must-not-cross",
+      },
       overlay: { showSource: false },
     },
     { authToken: "local-pairing", geminiApiKey: "cloud-secret" },
@@ -52,6 +62,14 @@ test("desktop settings produce explicit Gemini low-latency provider options", ()
   assert.equal(config.showSource, false);
   assert.equal(config.authToken, "local-pairing");
   assert.equal(config.geminiApiKey, "cloud-secret");
+  assert.equal(config.geminiTranslationMode, "balanced");
+  assert.equal(config.geminiTranscriptionModel, "gemini-transcribe-test");
+  assert.equal(config.geminiTextModel, "gemini-flash-lite-test");
+  assert.equal(config.geminiContextTurns, 5);
+  assert.equal(config.geminiPartialThrottleMs, 600);
+  assert.equal(config.geminiGlossary, "council = hội đồng");
+  assert.equal(config.geminiCharacterContext, "Alex: older sister of Sam.");
+  assert.equal(Object.hasOwn(config, "unknown"), false);
 });
 
 test("desktop pairing reuses an environment token without persisting or exposing it", () => {
@@ -162,6 +180,14 @@ test("active runtime stops before source, language, or consent changes become vi
   assert.equal(
     settingsPatchRequiresRuntimeStop(
       true,
+      { translation: { mode: "accurate" } },
+      { translation: { mode: "balanced" } },
+    ),
+    true,
+  );
+  assert.equal(
+    settingsPatchRequiresRuntimeStop(
+      true,
       { captions: { mode: "bilingual" } },
       { captions: { mode: "fastest" } },
     ),
@@ -215,6 +241,7 @@ test("successful credential test is idle while a successful active provider is l
       queueMs: null,
       updatedAt: null,
     },
+    diagnostics: null,
   });
   assert.deepEqual(runtimeStateForStatus({ level: "error" }, false), {
     state: "error",
@@ -238,6 +265,7 @@ test("successful credential test is idle while a successful active provider is l
       queueMs: null,
       updatedAt: null,
     },
+    diagnostics: null,
   });
 });
 
@@ -288,6 +316,7 @@ test("runtime snapshot keeps errors truthful while exposing independent pause an
         queueMs: 41,
         updatedAt: 5_000,
       },
+      diagnostics: null,
     },
   );
   const paused = runtimeStateForStatus(

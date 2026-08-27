@@ -1,6 +1,6 @@
 # Cài đặt bằng Control Center và CLI tối giản
 
-Cập nhật: 2026-08-24.
+Cập nhật: 2026-08-28.
 
 ## Bắt đầu nhanh
 
@@ -16,8 +16,9 @@ Control Center là nguồn cấu hình desktop:
 1. Chọn **Demo** (không cloud, caption mô phỏng) hoặc **Gemini** (dịch audio thật).
 2. Với Gemini, nhập, lưu/xóa và kiểm tra API key.
 3. Chọn tab/file, ngôn ngữ nguồn/đích và **Tự nhận diện** nếu cần.
-4. Đọc đường dữ liệu, xác nhận cloud consent và tinh chỉnh overlay.
-5. Bắt đầu/dừng phiên, ẩn xuống tray hoặc thoát ứng dụng.
+4. Chọn profile dịch: **Độ trễ thấp nhất**, **Cân bằng** (khuyên dùng) hoặc **Ưu tiên chính xác**. Hai profile có ngữ cảnh cho phép thêm thuật ngữ và mô tả nhân vật.
+5. Đọc đường dữ liệu, xác nhận cloud consent và tinh chỉnh overlay.
+6. Bắt đầu/dừng phiên, ẩn xuống tray hoặc thoát ứng dụng.
 
 Demo và Gemini là hai lựa chọn chạy được trong provider picker. OpenAI và Local có thể được hiển thị để định hướng nhưng bị vô hiệu hóa. Azure không nằm trong provider picker desktop; adapter Azure chỉ dành cho workflow headless/environment nâng cao.
 
@@ -29,7 +30,7 @@ Không truyền key hoặc pairing secret trên command line và không gửi ke
 
 | Lựa chọn | Trạng thái | Dữ liệu | Chi phí cần hiểu |
 |---|---|---|---|
-| Gemini Live Translate | Chạy được trong Control Center, ưu tiên | Audio tab/file đã chọn gửi tới Google | Free/Paid Tier tùy Gemini API project/model/quota |
+| Gemini ba profile | Chạy được trong Control Center | Audio tab/file đã chọn và context tùy profile gửi tới Google | Free/Paid Tier tùy từng model/project/quota |
 | Demo an toàn | Chạy được trong Control Center | Không gửi audio | Miễn phí; caption mô phỏng, không dịch audio thật |
 | Azure Speech | Adapter headless/nâng cao; không có trong picker desktop | Audio tab gửi tới Azure | F0 có thể có quota; S0/pay-as-you-go |
 | OpenAI Realtime Translate | Hiển thị nhưng chưa bật | Chưa gửi dữ liệu | API billing riêng với ChatGPT |
@@ -89,7 +90,7 @@ Headless không có Control Center và không đọc Gemini key từ desktop `sa
 npm run headless
 ```
 
-Tối thiểu, Gemini headless cần provider, Gemini API key, cloud consent và pairing secret mạnh. Source/target, candidate hints và guardrail có thể nằm trong environment; các cờ không nhạy cảm tương ứng chỉ được chấp nhận cho `start --headless`. Xem các tên biến và giá trị consent trong [`.env.example`](../.env.example). CLI fail-closed khi thiếu cấu hình bắt buộc và không hỏi secret tương tác trong pipe/CI.
+Tối thiểu, Gemini headless cần provider, Gemini API key, cloud consent và pairing secret mạnh. Source/target, candidate hints và guardrail có thể nằm trong environment. Profile dịch dùng `AUDIOTRANSLATE_TRANSLATION_MODE=fastest|balanced|accurate`; có thể ghi đè bằng `--translation-mode` nhưng chỉ với `start --headless`. [`.env.example`](../.env.example) cũng liệt kê các biến ghi đè model Transcribe/Text dành cho thử nghiệm. Các cờ không nhạy cảm tương ứng chỉ được chấp nhận cho `start --headless`; CLI fail-closed khi thiếu cấu hình bắt buộc và không hỏi secret tương tác trong pipe/CI.
 
 ## Cập nhật hoặc xóa key
 

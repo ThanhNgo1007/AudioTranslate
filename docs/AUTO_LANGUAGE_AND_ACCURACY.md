@@ -1,10 +1,10 @@
 # Tự nhận diện ngôn ngữ và chiến lược độ chính xác
 
-Cập nhật: 2026-08-24.
+Cập nhật: 2026-08-27.
 
 ## Trả lời ngắn
 
-Công cụ **đã có tự nhận diện ngôn ngữ đầu vào**. Gemini Live Translate là đường ưu tiên: model tự nhận diện liên tục và nhận 0–8 language hints tùy chọn. Audio ngắn, nhạc nền, accent nặng, hai ngôn ngữ gần nhau hoặc code-switch vẫn có thể làm mọi engine cần thêm ngữ cảnh hoặc nhận sai.
+Công cụ **đã có tự nhận diện ngôn ngữ đầu vào**. Profile nhanh nhất dùng Gemini Live Translate; hai profile contextual dùng Gemini Live Transcribe rồi dịch text bằng Flash-Lite. Cả hai route nhận 0–8 language hints tùy chọn. Audio ngắn, nhạc nền, accent nặng, hai ngôn ngữ gần nhau hoặc code-switch vẫn có thể làm model cần thêm speech hoặc nhận sai.
 
 Các contract hiện tại:
 
@@ -90,8 +90,12 @@ Các threshold dưới đây chỉ là điểm khởi đầu, phải hiệu chu�
 
 ## Hai pass để vừa nhanh vừa đúng
 
-1. **Draft pass:** streaming ASR và MT theo stable prefix/clause, debounce khoảng 120–200 ms, generation ID để bỏ kết quả cũ.
-2. **Final pass:** tại VAD boundary, chạy lại toàn utterance với language đã lock, context 1–2 câu, glossary và decoding chất lượng cao hơn.
+Pipeline contextual đã triển khai hai pass:
+
+1. **Draft pass (`balanced`):** Live Transcribe partial → Flash-Lite; chỉ chạy khi có ít nhất 8 ký tự đọc được, tăng đủ 12 ký tự hoặc hypothesis đổi, throttle mặc định 450 ms và generation ID loại kết quả cũ.
+2. **Final pass:** tại utterance boundary, hủy partial, dịch lại toàn câu với tối đa 6 cặp câu trước, glossary và ghi chú nhân vật. `accurate` bỏ hẳn draft pass.
+
+System instruction yêu cầu dịch tự nhiên theo văn cảnh phim, coi mọi context là dữ liệu không tin cậy và không tự bịa giới tính/quan hệ. Khi thiếu căn cứ, model phải ưu tiên cấu trúc trung tính hoặc lược đại từ. Đây là guardrail, không phải bảo đảm model luôn đúng; đánh giá song ngữ và golden set vẫn bắt buộc.
 
 Các phép đo release bắt buộc: LID macro-F1/time-to-lock/false-switch, ASR WER/CER, MT COMET/chrF cộng review song ngữ, accuracy tên/số/thuật ngữ, p50/p95 draft/stable latency và revision/flicker rate. Golden set phải có phim, YouTube, podcast, nhạc nền, accent, tiếng Việt và code-switch; không xếp hạng engine bằng số benchmark từ các model card khác tập dữ liệu.
 

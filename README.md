@@ -1,13 +1,14 @@
 # AudioTranslate Live
 
-AudioTranslate nhận audio từ **tab Chrome/Edge** hoặc **tệp người dùng chủ động chọn**, dịch trực tiếp bằng Gemini Live Translate và hiển thị phụ đề trên một overlay trong suốt, always-on-top. Bản hiện tại ưu tiên Gemini, có Control Center thân thiện cho người mới, đồng thời vẫn giữ CLI tối giản, demo local và adapter Azure cho headless/nâng cao.
+AudioTranslate nhận audio từ **tab Chrome/Edge** hoặc **tệp người dùng chủ động chọn**, dịch bằng Gemini và hiển thị phụ đề trên một overlay trong suốt, always-on-top. Control Center cho chọn đường trực tiếp Live Translate hoặc pipeline Live Transcribe → Flash-Lite có ngữ cảnh; CLI vẫn tối giản, kèm demo local và adapter Azure cho headless/nâng cao.
 
 > Mốc `<1 giây` là mục tiêu thiết kế cho **bản dịch nháp** trong điều kiện mạng/model thuận lợi, không phải SLA. Bản final cần thêm ngữ cảnh và có thể chậm hơn.
 
 ## Những gì đã triển khai
 
-- Control Center bằng React/TypeScript là nơi cấu hình desktop: chọn Demo/Gemini, lưu/kiểm tra Gemini API key, chọn tab hoặc file, chọn ngôn ngữ, xem trạng thái và tinh chỉnh overlay.
-- Gemini Live Translate realtime với tự nhận diện ngôn ngữ liên tục; có thể để trống hoặc cung cấp tối đa 8 gợi ý ngôn ngữ.
+- Control Center bằng React/TypeScript là nơi cấu hình desktop: chọn Demo/Gemini, lưu/kiểm tra Gemini API key, chọn tab hoặc file, chọn ngôn ngữ, profile dịch, context/glossary, trạng thái và overlay.
+- Ba profile Gemini: **Độ trễ thấp nhất** dùng `gemini-3.5-live-translate-preview`; **Cân bằng** dùng `gemini-3.5-transcribe-live` → `gemini-3.5-flash-lite` với partial; **Ưu tiên chính xác** dùng cùng pipeline nhưng chỉ dịch câu final.
+- Pipeline ngữ cảnh dịch lại toàn câu khi final, giữ tối đa sáu cặp câu nguồn/đích trong RAM, hủy kết quả partial lỗi thời và gom delta nhỏ thành cụm chữ dễ đọc. Prompt không được suy đoán giới tính/quan hệ khi audio và context chưa xác định.
 - Capture đúng tab Chrome/Edge bằng Manifest V3 `tabCapture` + offscreen document + `AudioWorklet`; âm thanh video vẫn phát bình thường.
 - Đọc file bằng file picker; giải mã trong renderer cô lập, resample thành PCM16 mono 16 kHz và stream theo hàng đợi giới hạn thay vì upload tự động cả thư mục.
 - Overlay trong suốt, always-on-top; chọn màn hình/vị trí/preset, khóa hoặc mở chỉnh sửa, chỉnh typography, high contrast, 1–2 dòng, tự ẩn và hiển thị transcript gốc. Các fragment trong cùng lượt nói được nối thành một câu; cửa sổ phụ đề cuộn theo hai dòng mới nhất thay vì phát lại từ đầu hoặc cắt bằng dấu ba chấm.
@@ -29,7 +30,9 @@ File picker ── decode/resample trong bộ nhớ ──┘
                     ↓
        WebSocket loopback + mutual HMAC
                     ↓
-        local gateway → Gemini Live Translate
+        local gateway → Gemini profile đã chọn
+                      ├─ Live Translate trực tiếp
+                      └─ Live Transcribe → Flash-Lite
                     ↓
        Electron main → transparent overlay
 ```
@@ -63,9 +66,10 @@ Trong Control Center:
 
 1. Chọn **Demo** để xem thử không cloud hoặc **Gemini** để dịch audio thật. OpenAI và Local chỉ được hiển thị là chưa khả dụng; Azure không nằm trong provider picker desktop.
 2. Với Gemini, dán API key và chọn **Lưu an toàn**.
-3. Chọn **Kiểm tra kết nối**; thao tác này mở một phiên Live Translate ngắn để kiểm key/model.
+3. Chọn **Kiểm tra kết nối**; thao tác này mở một phiên ngắn theo profile đang chọn để kiểm key/model.
 4. Chọn nguồn **Browser tab** hoặc **Audio file**, rồi chọn ngôn ngữ nguồn/đích. Có thể để nguồn ở **Tự nhận diện**.
-5. Đọc đường dữ liệu, xác nhận gửi audio đã chọn tới Google, chỉnh overlay rồi nhấn bắt đầu.
+5. Chọn **Cân bằng** (khuyên dùng), **Độ trễ thấp nhất** hoặc **Ưu tiên chính xác**. Hai chế độ ngữ cảnh cho nhập glossary và thông tin nhân vật đã biết.
+6. Đọc đường dữ liệu, xác nhận gửi audio đã chọn tới Google, chỉnh overlay rồi nhấn bắt đầu.
 
 Nếu chỉ muốn xem giao diện với phụ đề mô phỏng, không gửi audio lên cloud:
 
@@ -154,6 +158,8 @@ audiotranslate doctor --json
 
 Headless/automation không có Control Center và không đọc secret đã lưu bằng `safeStorage`. API key, pairing token và cloud consent bắt buộc phải đến từ environment/`.env` được bảo vệ hoặc secret injection của runner; các cờ provider/ngôn ngữ chỉ là override nâng cao cho `start --headless`. `GEMINI_API_KEY` trong `.env` chỉ dành cho đường này. Không truyền API key hay pairing token bằng command-line argument.
 
+Headless cũ mặc định giữ route `fastest`. Có thể chọn rõ `--translation-mode fastest|balanced|accurate` hoặc `AUDIOTRANSLATE_TRANSLATION_MODE`; model thử nghiệm có thể override bằng `GEMINI_LIVE_MODEL`, `GEMINI_TRANSCRIBE_MODEL` và `GEMINI_TEXT_MODEL`.
+
 ## Overlay
 
 Phím tắt:
@@ -173,6 +179,7 @@ Control Center cho chọn màn hình, vị trí/preset, cỡ và độ đậm ch
 - Gemini key không đi vào extension hay local WebSocket. Chuỗi người dùng đang nhập tồn tại tạm trong ô key của Control Center; sau khi IPC lưu, app không trả secret về renderer. [`safeStorage`](https://www.electronjs.org/docs/latest/api/safe-storage) mã hóa bằng backend hệ điều hành khi khả dụng; nếu Linux chỉ có backend `basic_text`, app giữ key trong phiên thay vì lưu plaintext.
 - Electron bật sandbox, context isolation, tắt Node integration và chỉ expose IPC được allowlist.
 - Không log Authorization/audio/transcript theo mặc định và không ghi audio/transcript xuống đĩa trong live path.
+- Context câu final của pipeline contextual chỉ tồn tại trong bộ nhớ runtime; pause xóa công việc đang thay đổi và stop xóa toàn bộ history. Glossary/ghi chú do người dùng nhập được lưu trong settings cục bộ mode `0600`, đồng thời là dữ liệu gửi tới Google trong mỗi yêu cầu Flash-Lite khi profile contextual chạy.
 - Mặc định không bật Gemini session resumption: khi Google xoay kết nối, app mở phiên mới và chấp nhận mất một ít ngữ cảnh thay vì yêu cầu lưu trạng thái phiên có thể khôi phục. Chỉ đặt `GEMINI_SESSION_RESUMPTION=true` sau khi đã đọc chính sách lưu giữ liên quan.
 - Cloud luôn cần consent rõ; không tự fallback từ local/demo sang Gemini hay Azure.
 
@@ -189,11 +196,12 @@ Ngân sách nháp mục tiêu:
 | Network + Live Translate draft | 250–850 ms, cần benchmark theo mạng/cặp ngôn ngữ |
 | **Draft target** | **p50 350–700 ms; p95 hướng tới <1 s** |
 
-Đây không phải SLA. Gemini Live Translate hiện là model preview; độ chính xác, availability, quota và event timing có thể thay đổi. Auto detect cần đủ speech, có thể sai với nhạc nền, accent, câu quá ngắn hoặc code-switch. Final theo câu thường chậm hơn draft.
+Pipeline **Cân bằng/Ưu tiên chính xác** thêm một lần gọi text model nên không dùng bảng mục tiêu Live Translate làm cam kết. Telemetry đã thu local queue, first-readable, partial-to-final, usage và result-to-RAF, nhưng vẫn cần A/B bằng key/mạng/audio thật để công bố p50/p95 và chi phí. Gemini preview/Free Tier có thể thay đổi availability, quota và event timing; auto detect vẫn cần đủ speech.
 
 Giới hạn khác:
 
 - Một capture session tại một thời điểm.
+- Chưa có speaker diarization trực tiếp; công cụ không tự gán lâu dài giới tính hoặc danh tính người nói.
 - Chưa có engine local/offline để dịch audio thật không qua cloud.
 - File codec phụ thuộc Electron/OS; nội dung DRM/protected có thể không capture được.
 - Wayland có thể giới hạn z-order/vị trí của overlay.

@@ -401,7 +401,7 @@ Run: `node --test tests/caption-composer.test.js tests/live-caption-block.test.j
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit the overlay slice**
+- [x] **Step 7: Commit the overlay slice**
 
 ```bash
 git add src/overlay/caption-composer.js src/overlay/renderer.js src/overlay/styles.css tests/caption-composer.test.js tests/overlay-renderer.test.js

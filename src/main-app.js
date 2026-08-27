@@ -20,6 +20,7 @@ const { FileGatewayClient } = require("./file-gateway-client");
 const { RealtimeGateway } = require("./gateway");
 const { collectDesktopDiagnostics } = require("./desktop-diagnostics");
 const { DesktopRuntimeSignals } = require("./desktop-runtime-signals");
+const { RollingRuntimeMetrics, RUNTIME_METRIC_FIELDS } = require("./runtime-metrics");
 const { listDisplayOptions, resolveOverlayDisplay } = require("./overlay-display");
 const { createProvider } = require("./provider-factory");
 const { SecretStore, resolveSecret, resolveSecretStatus } = require("./secret-store");
@@ -69,6 +70,7 @@ let runtimeArmed = false;
 let selectedFileReady = false;
 let runtimeState = { state: "idle", active: false, message: "Sẵn sàng thiết lập", latencyMs: null };
 const runtimeSignals = new DesktopRuntimeSignals();
+const runtimeMetrics = new RollingRuntimeMetrics({ maxSamples: 120 });
 let runtimeGeneration = 0;
 let lastStatus = { type: "status", level: "idle", message: "Đang khởi động AudioTranslate…" };
 let previewTimer = null;
@@ -483,7 +485,7 @@ function installApplicationMenu() {
 
 function runtimeStateFromStatus(status) {
   return runtimeStateForStatus(status, runtimeIsActive(), {
-    ...runtimeSignals.details(),
+    ...runtimeSignals.details(runtimeMetrics.snapshot()),
     armed: runtimeArmed,
     pauseSupported: runtimeConfig.provider === "gemini",
   });
@@ -505,9 +507,15 @@ function sendStatus(status) {
 }
 
 function sendCaption(caption) {
-  sendToWindow(overlayWindow, "overlay:caption", caption);
-  sendToWindow(controlWindow, "control:caption", caption);
-  if (runtimeSignals.applyCaption(runtimeGeneration, caption)) publishRuntimeSignals();
+  const payload = {
+    ...caption,
+    generation: Number.isFinite(caption?.generation)
+      ? Number(caption.generation)
+      : runtimeGeneration,
+  };
+  sendToWindow(overlayWindow, "overlay:caption", payload);
+  sendToWindow(controlWindow, "control:caption", payload);
+  if (runtimeSignals.applyCaption(runtimeGeneration, payload)) publishRuntimeSignals();
 }
 
 function providerSecretStatus() {
@@ -525,6 +533,10 @@ function configuredPairingToken() {
 function controlSnapshot() {
   const secretStatus = providerSecretStatus();
   const pairingStatus = publicPairingStatus(secretStore, "");
+  const translationMode = settings?.translation?.mode || "balanced";
+  const providerModel = translationMode === "fastest"
+    ? runtimeConfig.geminiModel || "gemini-3.5-live-translate-preview"
+    : `${settings?.translation?.transcriptionModel || runtimeConfig.geminiTranscriptionModel || "gemini-3.5-transcribe-live"} → ${settings?.translation?.textModel || runtimeConfig.geminiTextModel || "gemini-3.5-flash-lite"}`;
   return {
     settings,
     secrets: { gemini: secretStatus },
@@ -532,7 +544,7 @@ function controlSnapshot() {
       active: settings?.provider || "demo",
       keyConfigured: secretStatus.configured,
       connected: providerVerified,
-      model: runtimeConfig.geminiModel || "gemini-3.5-live-translate-preview",
+      model: providerModel,
       storage: secretStatus.storage,
       storageBackend: secretStatus.backend,
     },
@@ -634,6 +646,20 @@ async function replaceGateway({ activate = false } = {}) {
   nextGateway.on("caption", (caption) => {
     if (gateway === nextGateway) sendCaption(caption);
   });
+  nextGateway.on("metrics", (metrics) => {
+    if (gateway !== nextGateway || !runtimeSignals.acceptsEvent(generation, metrics)) return;
+    let changed = false;
+    for (const field of RUNTIME_METRIC_FIELDS) {
+      if (runtimeMetrics.record(field, metrics?.[field])) changed = true;
+    }
+    if (changed) publishRuntimeSignals();
+  });
+  nextGateway.on("usage", (event) => {
+    if (gateway !== nextGateway || !runtimeSignals.acceptsEvent(generation, event)) return;
+    if (runtimeMetrics.recordUsage(event?.usage, { mode: event?.mode })) {
+      publishRuntimeSignals();
+    }
+  });
   nextGateway.on("telemetry", (telemetry) => {
     if (gateway !== nextGateway || !runtimeSignals.applyTelemetry(generation, telemetry)) return;
     publishRuntimeSignals();
@@ -667,6 +693,7 @@ async function replaceGateway({ activate = false } = {}) {
 }
 
 async function startRuntime() {
+  runtimeMetrics.reset();
   runtimeSignals.setPaused(false);
   const provider = normalizeDesktopProvider(settings.provider);
   const mode = providerStartMode(provider, {
@@ -688,7 +715,13 @@ async function startRuntime() {
     return controlSnapshot();
   }
 
-  sendStatus({ level: "connecting", message: "Đang chuẩn bị Gemini Live Translate…" });
+  const translationMode = settings.translation.mode;
+  sendStatus({
+    level: "connecting",
+    message: translationMode === "fastest"
+      ? "Đang chuẩn bị Gemini Live Translate…"
+      : `Đang chuẩn bị Gemini Live Transcribe + Flash-Lite (${translationMode})…`,
+  });
   await replaceGateway({ activate: true });
   if (settings.source.kind === "tab") {
     sendStatus({
@@ -787,7 +820,12 @@ async function testGeminiProvider() {
     );
   });
   providerVerified = true;
-  sendStatus({ level: "ok", message: "Gemini API key hợp lệ và Live Translate đã sẵn sàng" });
+  sendStatus({
+    level: "ok",
+    message: settings.translation.mode === "fastest"
+      ? "Gemini API key hợp lệ và Live Translate đã sẵn sàng"
+      : "Gemini API key hợp lệ và Live Transcribe đã sẵn sàng; Flash-Lite sẽ được gọi khi có lời thoại",
+  });
   publishSnapshot();
   return controlSnapshot();
 }
@@ -800,6 +838,7 @@ function normalizeControlPatch(patch) {
   const next = {};
   if (isPlainRecord(patch.cloud)) next.cloud = patch.cloud;
   if (isPlainRecord(patch.captions)) next.captions = patch.captions;
+  if (isPlainRecord(patch.translation)) next.translation = patch.translation;
   if (isPlainRecord(patch.languages)) {
     next.source = {
       language: patch.languages.source,
@@ -1070,8 +1109,19 @@ function registerIpc() {
   });
   ipcMain.on("overlay:rendered", (event, metrics) => {
     if (event.sender !== overlayWindow?.webContents) return;
+    if (!runtimeSignals.acceptsEvent(runtimeGeneration, metrics)) return;
+    const recorded = runtimeMetrics.record("resultToRafMs", metrics?.resultToRafMs);
+    if (recorded) publishRuntimeSignals();
     if (process.env.AUDIOTRANSLATE_DEBUG === "true") {
-      process.stderr.write(`${JSON.stringify({ event: "overlay-rendered", ...metrics })}\n`);
+      process.stderr.write(`${JSON.stringify({
+        event: "overlay-rendered",
+        sessionId: metrics.sessionId,
+        generation: runtimeGeneration,
+        sequence: Number.isFinite(metrics.sequence) ? metrics.sequence : null,
+        isFinal: metrics.isFinal === true,
+        rafAt: Number.isFinite(metrics.rafAt) ? metrics.rafAt : null,
+        resultToRafMs: recorded ? Math.round(metrics.resultToRafMs) : null,
+      })}\n`);
     }
   });
 }

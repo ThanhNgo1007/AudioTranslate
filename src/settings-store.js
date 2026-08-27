@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const SETTINGS_VERSION = 2;
+const SETTINGS_VERSION = 3;
 
 const DEFAULT_SETTINGS = Object.freeze({
   version: SETTINGS_VERSION,
@@ -21,6 +21,15 @@ const DEFAULT_SETTINGS = Object.freeze({
     echoTargetLanguage: false,
     resetGapMs: 1100,
     finalDebounceMs: 120,
+  }),
+  translation: Object.freeze({
+    mode: "balanced",
+    transcriptionModel: "gemini-3.5-transcribe-live",
+    textModel: "gemini-3.5-flash-lite",
+    contextTurns: 4,
+    partialThrottleMs: 450,
+    glossary: "",
+    characterContext: "",
   }),
   overlay: Object.freeze({
     preset: "bottom",
@@ -55,6 +64,22 @@ function isPlainObject(value) {
   return prototype === Object.prototype || prototype === null;
 }
 
+function sanitizeModel(value, fallback) {
+  const model = String(value || fallback).trim();
+  if (!model || model.length > 200 || !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(model)) {
+    return fallback;
+  }
+  return model;
+}
+
+function sanitizeContextText(value, maximum = 4_000) {
+  return String(value || "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
+    .trim()
+    .slice(0, maximum);
+}
+
 function sanitizeNormalizedBounds(value) {
   if (!value || typeof value !== "object") return null;
   const x = clampNumber(value.x, 0.1, 0, 1);
@@ -75,6 +100,7 @@ function sanitizeSettings(value = {}) {
   const source = isPlainObject(value.source) ? value.source : {};
   const cloud = isPlainObject(value.cloud) ? value.cloud : {};
   const captions = isPlainObject(value.captions) ? value.captions : {};
+  const translation = isPlainObject(value.translation) ? value.translation : {};
   const overlay = isPlainObject(value.overlay) ? value.overlay : {};
   const provider = ["demo", "azure", "gemini"].includes(value.provider)
     ? value.provider
@@ -99,6 +125,15 @@ function sanitizeSettings(value = {}) {
     : null;
   const captionMode = explicitCaptionMode ||
     (legacySourcePreference === true ? "bilingual" : defaults.captions.mode);
+  const legacyDirectMode =
+    Number.isInteger(value.version) &&
+    value.version <= 2 &&
+    !["fastest", "balanced", "accurate"].includes(translation.mode);
+  const translationMode = ["fastest", "balanced", "accurate"].includes(translation.mode)
+    ? translation.mode
+    : legacyDirectMode
+      ? "fastest"
+      : defaults.translation.mode;
 
   return {
     version: SETTINGS_VERSION,
@@ -117,6 +152,27 @@ function sanitizeSettings(value = {}) {
       finalDebounceMs: Math.round(
         clampNumber(captions.finalDebounceMs, defaults.captions.finalDebounceMs, 0, 1000),
       ),
+    },
+    translation: {
+      mode: translationMode,
+      transcriptionModel: sanitizeModel(
+        translation.transcriptionModel,
+        defaults.translation.transcriptionModel,
+      ),
+      textModel: sanitizeModel(translation.textModel, defaults.translation.textModel),
+      contextTurns: Math.round(
+        clampNumber(translation.contextTurns, defaults.translation.contextTurns, 0, 6),
+      ),
+      partialThrottleMs: Math.round(
+        clampNumber(
+          translation.partialThrottleMs,
+          defaults.translation.partialThrottleMs,
+          250,
+          2000,
+        ),
+      ),
+      glossary: sanitizeContextText(translation.glossary),
+      characterContext: sanitizeContextText(translation.characterContext),
     },
     overlay: {
       preset,
@@ -168,6 +224,10 @@ function mergeSettings(current, patch) {
     captions: {
       ...(isPlainObject(safeCurrent.captions) ? safeCurrent.captions : {}),
       ...(isPlainObject(safePatch.captions) ? safePatch.captions : {}),
+    },
+    translation: {
+      ...(isPlainObject(safeCurrent.translation) ? safeCurrent.translation : {}),
+      ...(isPlainObject(safePatch.translation) ? safePatch.translation : {}),
     },
     overlay: {
       ...(isPlainObject(safeCurrent.overlay) ? safeCurrent.overlay : {}),
