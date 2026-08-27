@@ -533,10 +533,7 @@ function configuredPairingToken() {
 function controlSnapshot() {
   const secretStatus = providerSecretStatus();
   const pairingStatus = publicPairingStatus(secretStore, "");
-  const translationMode = settings?.translation?.mode || "balanced";
-  const providerModel = translationMode === "fastest"
-    ? runtimeConfig.geminiModel || "gemini-3.5-live-translate-preview"
-    : `${settings?.translation?.transcriptionModel || runtimeConfig.geminiTranscriptionModel || "gemini-3.5-transcribe-live"} → ${settings?.translation?.textModel || runtimeConfig.geminiTextModel || "gemini-3.5-flash-lite"}`;
+  const providerModel = runtimeConfig.geminiModel || "gemini-3.5-live-translate-preview";
   return {
     settings,
     secrets: { gemini: secretStatus },
@@ -715,12 +712,9 @@ async function startRuntime() {
     return controlSnapshot();
   }
 
-  const translationMode = settings.translation.mode;
   sendStatus({
     level: "connecting",
-    message: translationMode === "fastest"
-      ? "Đang chuẩn bị Gemini Live Translate…"
-      : `Đang chuẩn bị Gemini Live Transcribe + Flash-Lite (${translationMode})…`,
+    message: "Đang chuẩn bị Gemini Live Translate…",
   });
   await replaceGateway({ activate: true });
   if (settings.source.kind === "tab") {
@@ -822,9 +816,7 @@ async function testGeminiProvider() {
   providerVerified = true;
   sendStatus({
     level: "ok",
-    message: settings.translation.mode === "fastest"
-      ? "Gemini API key hợp lệ và Live Translate đã sẵn sàng"
-      : "Gemini API key hợp lệ và Live Transcribe đã sẵn sàng; Flash-Lite sẽ được gọi khi có lời thoại",
+    message: "Gemini API key hợp lệ và Live Translate đã sẵn sàng",
   });
   publishSnapshot();
   return controlSnapshot();
@@ -838,7 +830,6 @@ function normalizeControlPatch(patch) {
   const next = {};
   if (isPlainRecord(patch.cloud)) next.cloud = patch.cloud;
   if (isPlainRecord(patch.captions)) next.captions = patch.captions;
-  if (isPlainRecord(patch.translation)) next.translation = patch.translation;
   if (isPlainRecord(patch.languages)) {
     next.source = {
       language: patch.languages.source,

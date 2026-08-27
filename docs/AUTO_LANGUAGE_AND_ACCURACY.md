@@ -1,10 +1,10 @@
 # Tự nhận diện ngôn ngữ và chiến lược độ chính xác
 
-Cập nhật: 2026-08-27.
+Cập nhật: 2026-08-28.
 
 ## Trả lời ngắn
 
-Công cụ **đã có tự nhận diện ngôn ngữ đầu vào**. Profile nhanh nhất dùng Gemini Live Translate; hai profile contextual dùng Gemini Live Transcribe rồi dịch text bằng Flash-Lite. Cả hai route nhận 0–8 language hints tùy chọn. Audio ngắn, nhạc nền, accent nặng, hai ngôn ngữ gần nhau hoặc code-switch vẫn có thể làm model cần thêm speech hoặc nhận sai.
+Công cụ **đã có tự nhận diện ngôn ngữ đầu vào** qua Gemini Live Translate và nhận 0–8 language hints tùy chọn. Audio ngắn, nhạc nền, accent nặng, hai ngôn ngữ gần nhau hoặc code-switch vẫn có thể làm model cần thêm speech hoặc nhận sai.
 
 Các contract hiện tại:
 
@@ -88,14 +88,9 @@ Các threshold dưới đây chỉ là điểm khởi đầu, phải hiệu chu�
 - Reset khi đổi tab/video/audio track, seek, reconnect hoặc im lặng dài.
 - Confidence thấp: cảnh báo và đề nghị người dùng khóa locale; không âm thầm đổi engine giữa câu.
 
-## Hai pass để vừa nhanh vừa đúng
+## Một đường Live Translate duy nhất
 
-Pipeline contextual đã triển khai hai pass:
-
-1. **Draft pass (`balanced`):** Live Transcribe partial → Flash-Lite; chỉ chạy khi có ít nhất 8 ký tự đọc được, tăng đủ 12 ký tự hoặc hypothesis đổi, throttle mặc định 450 ms và generation ID loại kết quả cũ.
-2. **Final pass:** tại utterance boundary, hủy partial, dịch lại toàn câu với tối đa 6 cặp câu trước, glossary và ghi chú nhân vật. `accurate` bỏ hẳn draft pass.
-
-System instruction yêu cầu dịch tự nhiên theo văn cảnh phim, coi mọi context là dữ liệu không tin cậy và không tự bịa giới tính/quan hệ. Khi thiếu căn cứ, model phải ưu tiên cấu trúc trung tính hoặc lược đại từ. Đây là guardrail, không phải bảo đảm model luôn đúng; đánh giá song ngữ và golden set vẫn bắt buộc.
+Runtime hiện phát partial/final trực tiếp từ Gemini Live Translate. Pipeline hai pass dựa trên model text đã bị gỡ để tránh quota riêng và độ trễ bổ sung; app không còn gửi glossary, ghi chú nhân vật hoặc transcript sang một request dịch văn bản thứ hai. Chất lượng ngữ cảnh vì vậy phải được đánh giá trực tiếp trên output Live Translate và golden set song ngữ.
 
 Các phép đo release bắt buộc: LID macro-F1/time-to-lock/false-switch, ASR WER/CER, MT COMET/chrF cộng review song ngữ, accuracy tên/số/thuật ngữ, p50/p95 draft/stable latency và revision/flicker rate. Golden set phải có phim, YouTube, podcast, nhạc nền, accent, tiếng Việt và code-switch; không xếp hạng engine bằng số benchmark từ các model card khác tập dữ liệu.
 

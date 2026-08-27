@@ -83,14 +83,6 @@ function toMaxCloudMinutes(value, fallback = 0) {
   return parsed;
 }
 
-function toTranslationMode(value, fallback = "fastest") {
-  const mode = String(value ?? fallback).trim().toLowerCase();
-  if (!new Set(["fastest", "balanced", "accurate"]).has(mode)) {
-    throw new Error(`Invalid Gemini translation mode: ${value}`);
-  }
-  return mode;
-}
-
 function getConfig(argv = process.argv.slice(2), env = process.env, parsedArgs) {
   const args = parsedArgs || parseArgs(argv);
   const provider = String(args.provider ?? env.AUDIOTRANSLATE_PROVIDER ?? "demo").toLowerCase();
@@ -140,16 +132,6 @@ function getConfig(argv = process.argv.slice(2), env = process.env, parsedArgs) 
     geminiModel: String(
       env.GEMINI_LIVE_MODEL || "gemini-3.5-live-translate-preview",
     ),
-    geminiTranslationMode: toTranslationMode(
-      args["translation-mode"] ?? env.AUDIOTRANSLATE_TRANSLATION_MODE,
-      "fastest",
-    ),
-    geminiTranscriptionModel: String(
-      env.GEMINI_TRANSCRIBE_MODEL || "gemini-3.5-transcribe-live",
-    ),
-    geminiTextModel: String(
-      env.GEMINI_TEXT_MODEL || "gemini-3.5-flash-lite",
-    ),
     geminiSessionResumption: toBoolean(
       env.GEMINI_SESSION_RESUMPTION,
       false,
@@ -168,5 +150,4 @@ module.exports = {
   toLanguageList,
   toMaxCloudMinutes,
   toPort,
-  toTranslationMode,
 };

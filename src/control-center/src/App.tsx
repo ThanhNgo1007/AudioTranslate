@@ -45,15 +45,6 @@ const fallbackSnapshot: ControlCenterSnapshot = {
   pairing: { configured: false, storage: "unavailable" },
   source: { kind: "browser-tab", connected: false, label: "Chưa kết nối tab" },
   languages: { source: "auto", target: "vi", detected: null, detectionMs: null },
-  translation: {
-    mode: "balanced",
-    transcriptionModel: "gemini-3.5-transcribe-live",
-    textModel: "gemini-3.5-flash-lite",
-    contextTurns: 4,
-    partialThrottleMs: 450,
-    glossary: "",
-    characterContext: "",
-  },
   privacy: { cloudConsent: false, maxCloudMinutes: 30 },
   overlay: {
     preset: "cinema",

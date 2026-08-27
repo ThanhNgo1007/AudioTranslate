@@ -215,7 +215,7 @@ test("valid Azure headless config reaches terminal runtime and secrets stay out 
   assert.doesNotMatch(JSON.stringify(summary), new RegExp(secret));
 });
 
-test("headless CLI accepts and forwards an explicit Gemini translation mode", async () => {
+test("headless CLI rejects the removed Gemini translation mode option", async () => {
   let receivedArgs;
   let receivedOptions;
   const args = ["start", "--headless", "--translation-mode", "accurate"];
@@ -232,9 +232,9 @@ test("headless CLI accepts and forwards an explicit Gemini translation mode", as
     },
   });
 
-  assert.equal(code, 0);
-  assert.equal(receivedOptions["translation-mode"], "accurate");
-  assert.deepEqual(receivedArgs, ["--headless", "--translation-mode", "accurate"]);
+  assert.equal(code, 2);
+  assert.equal(receivedOptions, undefined);
+  assert.equal(receivedArgs, undefined);
 });
 
 test("config summary reports malformed or whitespace-only env credentials as missing", () => {
