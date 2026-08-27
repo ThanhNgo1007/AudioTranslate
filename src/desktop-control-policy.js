@@ -1,4 +1,5 @@
 const crypto = require("node:crypto");
+const { sanitizeRuntimeMetricsSnapshot } = require("./runtime-metrics");
 
 const PAIRING_TOKEN_PATTERN = /^[A-Za-z0-9._~+/=-]{24,512}$/;
 
@@ -23,6 +24,38 @@ function desktopConfigFromArgs(argv, getConfig) {
     geminiApiKey: "",
     preview,
     allowDevClients: false,
+  };
+}
+
+function configFromDesktopSettings(cliConfig = {}, settings = {}, secrets = {}) {
+  const source = settings?.source || {};
+  const cloud = settings?.cloud || {};
+  const captions = settings?.captions || {};
+  const translation = settings?.translation || {};
+  const overlay = settings?.overlay || {};
+  return {
+    ...cliConfig,
+    provider: settings?.provider || cliConfig.provider,
+    sourceLanguage: source.language || "auto",
+    sourceLanguageCandidates: Array.isArray(source.languageHints) ? source.languageHints : [],
+    targetLanguage: source.targetLanguage || "vi",
+    showSource: captions.mode === "bilingual" && overlay.showSource !== false,
+    cloudConsent: cloud.consent || "",
+    maxCloudMinutes: cloud.maxMinutes,
+    authToken: String(secrets.authToken || ""),
+    geminiApiKey: String(secrets.geminiApiKey || ""),
+    geminiInputTranscription: captions.mode === "bilingual",
+    geminiEchoTargetLanguage: captions.echoTargetLanguage === true,
+    geminiFinalDebounceMs: captions.finalDebounceMs,
+    captionResetGapMs: captions.resetGapMs,
+    geminiTranslationMode: translation.mode || cliConfig.geminiTranslationMode || "balanced",
+    geminiTranscriptionModel:
+      translation.transcriptionModel || cliConfig.geminiTranscriptionModel,
+    geminiTextModel: translation.textModel || cliConfig.geminiTextModel,
+    geminiContextTurns: translation.contextTurns,
+    geminiPartialThrottleMs: translation.partialThrottleMs,
+    geminiGlossary: String(translation.glossary || ""),
+    geminiCharacterContext: String(translation.characterContext || ""),
   };
 }
 
@@ -166,6 +199,13 @@ function settingsPatchRequiresRuntimeStop(runtimeActive, patch = {}, currentSett
   if (!runtimeActive || !patch || typeof patch !== "object") return false;
   if (patch.source && typeof patch.source === "object") return true;
   if (patch.languages && typeof patch.languages === "object") return true;
+  if (patch.captions && typeof patch.captions === "object") return true;
+  if (patch.translation && typeof patch.translation === "object") return true;
+  if (
+    patch.overlay &&
+    typeof patch.overlay === "object" &&
+    Object.hasOwn(patch.overlay, "showSource")
+  ) return true;
   if (patch.cloud && typeof patch.cloud === "object") {
     const nextConsent = Object.hasOwn(patch.cloud, "consent")
       ? patch.cloud.consent
@@ -231,6 +271,7 @@ function runtimeStateForStatus(status = {}, runtimeActive = false, details = {})
     detectedLanguage: normalizeDetectedLanguage(details.detectedLanguage),
     languageDetectionMs: finiteNonNegative(details.languageDetectionMs),
     telemetry: normalizeRuntimeTelemetry(details.telemetry),
+    diagnostics: sanitizeRuntimeMetricsSnapshot(details.diagnostics),
   };
 }
 
@@ -248,6 +289,7 @@ module.exports = {
   beforeQuitAction,
   configureDesktopIdentity,
   controlWindowChromeOptions,
+  configFromDesktopSettings,
   desktopConfigFromArgs,
   desktopEditMenuTemplate,
   desktopSettingsMigrationPatch,

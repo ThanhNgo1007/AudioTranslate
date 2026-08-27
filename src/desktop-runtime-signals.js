@@ -1,3 +1,5 @@
+const { sanitizeRuntimeMetricsSnapshot } = require("./runtime-metrics");
+
 function nonNegativeInteger(value, fallback = null) {
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? Math.round(number) : fallback;
@@ -91,14 +93,21 @@ class DesktopRuntimeSignals {
     return true;
   }
 
-  details() {
+  details(runtimeDiagnostics = null) {
     return {
       paused: this.paused,
       latencyMs: this.latencyMs,
       detectedLanguage: this.detectedLanguage,
       languageDetectionMs: this.languageDetectionMs,
       telemetry: this.telemetry ? { ...this.telemetry } : null,
+      diagnostics: sanitizeRuntimeMetricsSnapshot(runtimeDiagnostics),
     };
+  }
+
+  acceptsEvent(generation, event) {
+    if (!this.accepts(generation, event?.sessionId)) return false;
+    const eventGeneration = Number(event?.generation);
+    return !Number.isFinite(eventGeneration) || eventGeneration === generation;
   }
 
   accepts(generation, sessionId) {

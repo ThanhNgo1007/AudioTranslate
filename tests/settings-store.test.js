@@ -6,6 +6,94 @@ const test = require("node:test");
 
 const { SettingsStore, sanitizeSettings } = require("../src/settings-store");
 
+test("fresh settings recommend contextual translation without changing caption display", () => {
+  const settings = sanitizeSettings({});
+
+  assert.equal(settings.version, 3);
+  assert.deepEqual(settings.captions, {
+    mode: "fastest",
+    echoTargetLanguage: false,
+    resetGapMs: 1100,
+    finalDebounceMs: 120,
+  });
+  assert.deepEqual(settings.translation, {
+    mode: "balanced",
+    transcriptionModel: "gemini-3.5-transcribe-live",
+    textModel: "gemini-3.5-flash-lite",
+    contextTurns: 4,
+    partialThrottleMs: 450,
+    glossary: "",
+    characterContext: "",
+  });
+  assert.equal(settings.overlay.showSource, false);
+});
+
+test("version two settings keep the direct fastest route until the user opts in", () => {
+  const settings = sanitizeSettings({ version: 2, provider: "gemini" });
+
+  assert.equal(settings.version, 3);
+  assert.equal(settings.translation.mode, "fastest");
+  assert.equal(settings.translation.transcriptionModel, "gemini-3.5-transcribe-live");
+  assert.equal(settings.translation.textModel, "gemini-3.5-flash-lite");
+});
+
+test("contextual translation settings are bounded and unknown fields are stripped", () => {
+  const settings = sanitizeSettings({
+    version: 3,
+    translation: {
+      mode: "cinematic-turbo",
+      transcriptionModel: "  bad\nmodel  ",
+      textModel: "gemini-3.5-flash-lite",
+      contextTurns: 999,
+      partialThrottleMs: 1,
+      glossary: `  Hero = Anh hùng\r\n${"g".repeat(5_000)}`,
+      characterContext: `  Alex is Sam's older sister.\u0000${"c".repeat(5_000)}`,
+      secret: "must-not-survive",
+    },
+  });
+
+  assert.equal(settings.translation.mode, "balanced");
+  assert.equal(settings.translation.transcriptionModel, "gemini-3.5-transcribe-live");
+  assert.equal(settings.translation.textModel, "gemini-3.5-flash-lite");
+  assert.equal(settings.translation.contextTurns, 6);
+  assert.equal(settings.translation.partialThrottleMs, 250);
+  assert.equal(settings.translation.glossary.length, 4_000);
+  assert.match(settings.translation.glossary, /^Hero = Anh hùng\n/);
+  assert.equal(settings.translation.characterContext.length, 4_000);
+  assert.doesNotMatch(settings.translation.characterContext, /\u0000/);
+  assert.equal(settings.translation.secret, undefined);
+});
+
+test("legacy source-caption settings migrate without overriding an explicit profile", () => {
+  const legacyBilingual = sanitizeSettings({ overlay: { showSource: true } });
+  assert.equal(legacyBilingual.captions.mode, "bilingual");
+  assert.equal(legacyBilingual.overlay.showSource, true);
+
+  const explicitFastest = sanitizeSettings({
+    captions: { mode: "fastest" },
+    overlay: { showSource: true },
+  });
+  assert.equal(explicitFastest.captions.mode, "fastest");
+  assert.equal(explicitFastest.overlay.showSource, false);
+
+  const invalid = sanitizeSettings({ captions: { mode: "turbo" } });
+  assert.equal(invalid.captions.mode, "fastest");
+});
+
+test("caption timing settings are finite integers within safe bounds", () => {
+  const settings = sanitizeSettings({
+    captions: {
+      echoTargetLanguage: true,
+      resetGapMs: -10,
+      finalDebounceMs: 9999,
+    },
+  });
+
+  assert.equal(settings.captions.echoTargetLanguage, true);
+  assert.equal(settings.captions.resetGapMs, 250);
+  assert.equal(settings.captions.finalDebounceMs, 1000);
+});
+
 test("sanitizeSettings clamps presentation values and strips unknown fields", () => {
   const value = sanitizeSettings({
     provider: "gemini",

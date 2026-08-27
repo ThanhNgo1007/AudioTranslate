@@ -3,6 +3,7 @@ const test = require("node:test");
 
 const {
   composeCaption,
+  composeMeasuredText,
   composeText,
   createCaptionPager,
   createCaptionVisibilityController,
@@ -41,7 +42,7 @@ test("long text without punctuation is hard-wrapped without losing text", () => 
   assert.equal(composition.qc.pageCount, 3);
   for (const page of composition.pages) {
     assert.ok(page.lines.length <= 2);
-    for (const line of page.lines) assert.ok(graphemeCount(line) <= 42);
+    for (const line of page.lines) assert.ok(graphemeCount(line) <= 52);
   }
 });
 
@@ -53,8 +54,115 @@ test("emoji ZWJ sequences and combining characters are never split", () => {
 
   assert.equal(graphemeCount(text), 90);
   assert.equal(originalText(composition), text);
-  assert.equal(composition.pages[0].lines[0], family.repeat(42));
-  assert.equal(composition.pages.at(-1).lines.at(-1), combined.repeat(6));
+  assert.equal(composition.pages[0].lines[0], family.repeat(45));
+  assert.equal(composition.pages.at(-1).lines.at(-1), combined.repeat(45));
+});
+
+function measuredWidth(value) {
+  return graphemeCount(value) * 10;
+}
+
+function assertMeasuredPages(composition, maxWidth) {
+  assert.equal(originalText(composition), composition.rawText);
+  assert.ok(composition.pages.every((page) => page.lines.length <= 2));
+  for (const page of composition.pages) {
+    for (const line of page.lines) {
+      assert.ok(
+        measuredWidth(line) <= maxWidth,
+        `expected ${JSON.stringify(line)} to fit within ${maxWidth}px`,
+      );
+    }
+  }
+}
+
+test("measured wrapping preserves Vietnamese whitespace and limits every page to two lines", () => {
+  const text =
+    "Đây là một câu phụ đề tiếng Việt đủ dài để kiểm tra việc xuống dòng theo chiều rộng thật.";
+  const composition = composeMeasuredText(text, {
+    maxLines: 2,
+    maxWidth: 190,
+    measureText: measuredWidth,
+  });
+
+  assertMeasuredPages(composition, 190);
+  assert.equal(composition.qc.measurement, "pixel");
+  assert.ok(composition.pages.length > 1);
+  assert.ok(composition.pages.slice(0, -1).every((page) => page.lines.length === 2));
+});
+
+test("measured wrapping splits an overlong English word only at grapheme boundaries", () => {
+  const text = "pneumonoultramicroscopicsilicovolcanoconiosis";
+  const composition = composeMeasuredText(text, {
+    maxLines: 2,
+    maxWidth: 70,
+    measureText: measuredWidth,
+  });
+
+  assertMeasuredPages(composition, 70);
+  assert.equal(originalText(composition), text);
+  assert.ok(composition.pages.length > 1);
+});
+
+test("measured wrapping handles CJK text without spaces", () => {
+  const text = "这是一个没有空格但仍然必须安全换行的中文字幕测试";
+  const composition = composeMeasuredText(text, {
+    maxLines: 2,
+    maxWidth: 80,
+    measureText: measuredWidth,
+  });
+
+  assertMeasuredPages(composition, 80);
+  assert.equal(originalText(composition), text);
+});
+
+test("measured wrapping never slices emoji or combining grapheme clusters", () => {
+  const family = "👨‍👩‍👧‍👦";
+  const combined = "e\u0301";
+  const text = `${family.repeat(9)}${combined.repeat(9)}`;
+  const composition = composeMeasuredText(text, {
+    maxLines: 2,
+    maxWidth: 40,
+    measureText: measuredWidth,
+  });
+
+  assertMeasuredPages(composition, 40);
+  assert.equal(originalText(composition), text);
+  assert.ok(composition.pages.flatMap((page) => page.lines).every((line) => !line.endsWith("\u200d")));
+});
+
+test("measured wrapping keeps closing punctuation attached to readable text", () => {
+  const text = "Alpha beta! Gamma delta?";
+  const composition = composeMeasuredText(text, {
+    maxLines: 2,
+    maxWidth: 100,
+    measureText: measuredWidth,
+  });
+
+  assertMeasuredPages(composition, 100);
+  assert.ok(
+    composition.pages
+      .flatMap((page) => page.lines)
+      .every((line) => !/^[,.;:!?…。！？、，；：]/u.test(line)),
+  );
+});
+
+test("measured wrapping falls back to 52 graphemes when width data is unavailable", () => {
+  const text = "a".repeat(105);
+  const missingMeasure = composeMeasuredText(text, { maxLines: 2, maxWidth: 700 });
+  const invalidWidth = composeMeasuredText(text, {
+    maxLines: 2,
+    maxWidth: 0,
+    measureText: measuredWidth,
+  });
+
+  for (const composition of [missingMeasure, invalidWidth]) {
+    assert.equal(originalText(composition), text);
+    assert.equal(composition.qc.measurement, "grapheme-fallback");
+    assert.equal(composition.qc.maxGraphemesPerLine, 52);
+    assert.ok(
+      composition.pages.flatMap((page) => page.lines).every((line) => graphemeCount(line) <= 52),
+    );
+  }
 });
 
 test("caption composition preserves both translation and source across paired pages", () => {

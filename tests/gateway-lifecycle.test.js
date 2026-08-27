@@ -217,6 +217,7 @@ test("gateway configuration owns language and transcript settings", async () => 
       showSource: false,
     }),
     {
+      now: () => 1000,
       providerFactory: (_config, session, providerCallbacks) => {
         sessionOptions = session;
         callbacks = providerCallbacks;
@@ -253,9 +254,114 @@ test("gateway configuration owns language and transcript settings", async () => 
       provider: "gemini",
       sessionId: "session-1",
       maxCloudMinutes: 0,
+      providerPrepareMs: 0,
     },
   );
   assert.equal(socket.sent.find((message) => message.type === "caption").showSource, false);
+  await gateway.close();
+});
+
+test("gateway measures provider preparation before acknowledging started", async () => {
+  let now = 1000;
+  const metrics = [];
+  const gateway = new RealtimeGateway(baseConfig({ provider: "gemini" }), {
+    now: () => now,
+    providerFactory: () => ({
+      async start() {
+        now = 1375;
+      },
+      async stop() {},
+      write() {},
+    }),
+  });
+  gateway.on("metrics", (event) => metrics.push(event));
+  const socket = fakeSocket();
+
+  await gateway.handleMessage(socket, startControl(), false);
+
+  const started = socket.sent.find((message) => message.type === "started");
+  assert.equal(started.providerPrepareMs, 375);
+  assert.deepEqual(metrics, [{
+    type: "runtime-metrics",
+    sessionId: started.sessionId,
+    providerPrepareMs: 375,
+  }]);
+  await gateway.close();
+});
+
+test("gateway emits only numeric latency and usage diagnostics for the active session", async () => {
+  let now = 1_000;
+  let callbacks;
+  const metricEvents = [];
+  const usageEvents = [];
+  const gateway = new RealtimeGateway(baseConfig({ provider: "gemini" }), {
+    now: () => now,
+    providerFactory: (_config, _session, providerCallbacks) => {
+      callbacks = providerCallbacks;
+      return {
+        async start() {},
+        async stop() {},
+        write() {
+          return true;
+        },
+      };
+    },
+  });
+  gateway.on("metrics", (event) => metricEvents.push(event));
+  gateway.on("usage", (event) => usageEvents.push(event));
+  const socket = fakeSocket();
+  await gateway.handleMessage(socket, startControl(), false);
+  const sessionId = socket.sent.find((message) => message.type === "started").sessionId;
+
+  now = 1_120;
+  await gateway.handleMessage(
+    socket,
+    encodeAudioFrame(Buffer.alloc(640, 1), { sequence: 0, capturedAt: 1_100 }),
+    true,
+  );
+  callbacks.onCaption({
+    translation: "Nội dung riêng tư",
+    transcript: "Private source",
+    sequence: 0,
+    isFinal: false,
+    emittedAt: 1_700,
+    latencyMs: 600,
+  });
+  callbacks.onCaption({
+    translation: "Nội dung riêng tư hoàn chỉnh",
+    sequence: 1,
+    isFinal: true,
+    emittedAt: 1_850,
+    partialToFinalMs: 150,
+  });
+  callbacks.onUsage({
+    promptTokenCount: 100,
+    responseTokenCount: 25,
+    totalTokenCount: 125,
+    transcript: "must-not-leak",
+    audio: "must-not-leak",
+  });
+
+  assert.ok(metricEvents.some((event) => event.providerPrepareMs === 0));
+  assert.ok(metricEvents.some((event) => event.localQueueMs === 20));
+  assert.ok(metricEvents.some((event) => event.liveEdgeToPartialMs === 600));
+  assert.ok(metricEvents.some((event) => event.partialToFinalMs === 150));
+  assert.equal(metricEvents.filter((event) => event.firstReadableMs === 600).length, 1);
+  assert.ok(metricEvents.every((event) => event.sessionId === sessionId));
+  assert.deepEqual(usageEvents, [{
+    type: "runtime-usage",
+    sessionId,
+    mode: "session-total",
+    usage: {
+      promptTokenCount: 100,
+      responseTokenCount: 25,
+      totalTokenCount: 125,
+    },
+  }]);
+  assert.doesNotMatch(
+    JSON.stringify({ metricEvents, usageEvents }),
+    /Nội dung|Private source|must-not-leak|transcript|audio/i,
+  );
   await gateway.close();
 });
 
@@ -470,6 +576,7 @@ test("audio telemetry aggregates PCM without exposing it and throttles session u
   const origin = Date.now();
   let now = origin;
   const writes = [];
+  const activity = [];
   const gateway = new RealtimeGateway(baseConfig(), {
     now: () => now,
     telemetryIntervalMs: 250,
@@ -479,6 +586,9 @@ test("audio telemetry aggregates PCM without exposing it and throttles session u
       write(pcm) {
         writes.push(Buffer.from(pcm));
         return true;
+      },
+      setAudioActivity(value) {
+        activity.push(value);
       },
     }),
   });
@@ -525,6 +635,17 @@ test("audio telemetry aggregates PCM without exposing it and throttles session u
   assert.equal(telemetry[0].updatedAt, origin + 250);
   assert.equal(Object.hasOwn(telemetry[0], "pcm"), false);
   assert.doesNotMatch(JSON.stringify(telemetry[0]), /transcript|translation|secret/i);
+  assert.deepEqual(activity, [{
+    rms: telemetry[0].rms,
+    peak: telemetry[0].peak,
+    speech: true,
+    silenceMs: 0,
+    packetGapCount: 1,
+    droppedFrames: 0,
+    queueMs: 40,
+    updatedAt: origin + 250,
+  }]);
+  assert.doesNotMatch(JSON.stringify(activity), /pcm|type|sessionId/i);
   await gateway.close();
 });
 

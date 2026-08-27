@@ -6,6 +6,7 @@ import {
   describeLatency,
   meterSegments,
   normalizeAudioTelemetry,
+  normalizeRuntimeDiagnostics,
 } from "../src/runtime-insights.mjs";
 
 test("audio telemetry is finite, clamped and preserves truthful loss counters", () => {
@@ -63,4 +64,40 @@ test("latency status is honest about missing samples and warns past realtime tar
   assert.deepEqual(describeLatency(null), { label: "—", tone: "idle", detail: "Chưa có caption" });
   assert.deepEqual(describeLatency(812), { label: "812 ms", tone: "good", detail: "Trong mục tiêu realtime" });
   assert.deepEqual(describeLatency(1450), { label: "1,45 s", tone: "warning", detail: "Chậm hơn mục tiêu 1 giây" });
+});
+
+test("runtime diagnostics normalize only bounded numeric latency summaries and usage", () => {
+  const diagnostics = normalizeRuntimeDiagnostics({
+    metrics: {
+      providerPrepareMs: { latest: 440, p50: 410, p95: 520, count: 9 },
+      firstReadableMs: { latest: 780, p50: 720, p95: 980, count: 6 },
+      transcript: { latest: 1, p50: 1, p95: 1, count: 1 },
+    },
+    usage: {
+      promptTokenCount: 120,
+      responseTokenCount: 30,
+      totalTokenCount: 150,
+      audio: "private",
+      text: "private",
+    },
+  });
+
+  assert.deepEqual(diagnostics.metrics.providerPrepareMs, {
+    latest: 440,
+    p50: 410,
+    p95: 520,
+    count: 9,
+  });
+  assert.deepEqual(diagnostics.metrics.firstReadableMs, {
+    latest: 780,
+    p50: 720,
+    p95: 980,
+    count: 6,
+  });
+  assert.deepEqual(diagnostics.usage, {
+    promptTokenCount: 120,
+    responseTokenCount: 30,
+    totalTokenCount: 150,
+  });
+  assert.doesNotMatch(JSON.stringify(diagnostics), /private|transcript|audio|text/i);
 });

@@ -1,11 +1,12 @@
 # Kế hoạch phát triển AudioTranslate
 
-Cập nhật: 2026-08-26. Tài liệu này chỉ liệt kê những hạng mục **chưa hoàn thiện** hoặc mới ở mức prototype. Những mục đã chạy được được ghi riêng để tránh người dùng hiểu nhầm là tính năng sẵn sàng.
+Cập nhật: 2026-08-27. Tài liệu này chỉ liệt kê những hạng mục **chưa hoàn thiện** hoặc mới ở mức prototype. Những mục đã chạy được được ghi riêng để tránh người dùng hiểu nhầm là tính năng sẵn sàng.
 
 ## Nền tảng đã có
 
 - Control Center React/TypeScript là giao diện chính; CLI chỉ dùng để mở app, preview, doctor và headless.
-- Gemini Live Translate nhận audio từ tab Chrome/Edge hoặc file do người dùng chọn; Demo chạy hoàn toàn local. Azure chỉ dành cho headless/nâng cao.
+- Gemini có ba profile: Live Translate trực tiếp, Live Transcribe → Flash-Lite có partial, và final-only ưu tiên chính xác. Demo chạy hoàn toàn local; Azure chỉ dành cho headless/nâng cao.
+- Contextual route đã có generation cancellation, phrase buffering, final retranslation, RAM-only history tối đa 6 turn, glossary và ghi chú nhân vật với policy không suy đoán giới tính.
 - Tự nhận diện ngôn ngữ nguồn, thời gian khóa ngôn ngữ, độ trễ caption, RMS/peak, speech/silence, queue, packet gap và dropped frame đã được đưa lên Control Center.
 - Pause/resume giữ phiên capture nhưng chặn và xóa audio đang chờ trước provider; stop/error đóng phiên và xóa queue.
 - Diagnostics trong app kiểm provider, key/consent, extension/pairing, privacy, runtime và cổng local mà không trả secret hoặc raw audio.
@@ -124,8 +125,8 @@ Tiêu chí nghiệm thu:
 
 ## Sprint 5 — chất lượng và UX nâng cao (P1/P2)
 
-- Glossary/phrase list, hot reload và profile theo phim/website/cặp ngôn ngữ.
-- Context 1–2 câu, punctuation, suppression nhạc/bài hát và confidence gate.
+- Lưu nhiều glossary/profile theo phim/website/cặp ngôn ngữ, import/export và hot reload có kiểm soát. Một glossary/character context cho phiên hiện tại đã có.
+- Suppression nhạc/bài hát, confidence gate và cảnh báo câu có độ chắc chắn thấp. Punctuation/phrase buffering và context RAM đã có nhưng cần A/B thực tế.
 - Manual subtitle delay ±5 giây; history/export transcript; điều khiển start/stop/clear/pin từ extension.
 - Bilingual/original-only/translated-only; dyslexia-friendly font, safe area, screen-reader controls.
 - Speaker diarization chỉ cho final/history; faster-whisper refinement không chặn live caption.

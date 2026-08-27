@@ -70,12 +70,32 @@ function createProvider(config, sessionOptions, callbacks) {
         "Gemini cloud consent is missing. Open Control Center and approve sending the selected audio source to Google.",
       );
     }
+    const translationMode = String(config.geminiTranslationMode || "fastest").toLowerCase();
+    if (translationMode === "balanced" || translationMode === "accurate") {
+      const { GeminiContextualTranslator } = require("./providers/gemini-contextual-translate");
+      return new GeminiContextualTranslator({
+        ...common,
+        apiKey: config.geminiApiKey,
+        mode: translationMode,
+        transcriptionModel: config.geminiTranscriptionModel,
+        textModel: config.geminiTextModel,
+        contextTurns: config.geminiContextTurns,
+        partialThrottleMs: config.geminiPartialThrottleMs,
+        glossary: config.geminiGlossary,
+        characterContext: config.geminiCharacterContext,
+      });
+    }
+    if (translationMode !== "fastest") {
+      throw new Error(`Unsupported Gemini translation mode: ${translationMode}`);
+    }
     const { GeminiLiveTranslator } = require("./providers/gemini-live-translate");
     return new GeminiLiveTranslator({
       ...common,
       apiKey: config.geminiApiKey,
       model: config.geminiModel,
-      echoTargetLanguage: true,
+      enableInputTranscription: config.geminiInputTranscription === true,
+      echoTargetLanguage: config.geminiEchoTargetLanguage === true,
+      finalDebounceMs: config.geminiFinalDebounceMs,
       enableSessionResumption: config.geminiSessionResumption !== false,
     });
   }

@@ -26,8 +26,37 @@ let activeProvider = "";
 let gatewayReady = false;
 let fatalStopping = false;
 let handshakeTimer = null;
+let pendingPreparation = null;
+let activeProviderPrepareMs = null;
 const preRoll = new BoundedPreroll();
 let operationQueue = Promise.resolve();
+
+function createPreparationPromise() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  pendingPreparation = { resolve, reject, settled: false };
+  return promise;
+}
+
+function resolvePreparation(value) {
+  const pending = pendingPreparation;
+  if (!pending || pending.settled) return;
+  pending.settled = true;
+  pendingPreparation = null;
+  pending.resolve(value);
+}
+
+function rejectPreparation(error) {
+  const pending = pendingPreparation;
+  if (!pending || pending.settled) return;
+  pending.settled = true;
+  pendingPreparation = null;
+  pending.reject(error instanceof Error ? error : new Error(String(error)));
+}
 
 function notifyBackground(patch) {
   const safePatch = { ...patch };
@@ -84,6 +113,7 @@ function failCapture(message) {
   reconnectTimer = null;
   handshakeTimer = null;
   const safeMessage = sanitizeStatusMessage(message, [activeSettings?.token || ""]);
+  rejectPreparation(new Error(safeMessage));
   enqueueOperation(async () => {
     await stopCapture(false);
     notifyBackground({
@@ -106,7 +136,13 @@ function connectSocket(isReconnect = false) {
     return;
   }
 
-  const candidate = new WebSocket(endpoint);
+  let candidate;
+  try {
+    candidate = new WebSocket(endpoint);
+  } catch (error) {
+    failCapture(error.message);
+    return;
+  }
   let startSent = false;
   let authenticating = false;
   let startedReceived = false;
@@ -132,7 +168,7 @@ function connectSocket(isReconnect = false) {
       if (candidate === socket && !gatewayReady) candidate.close(4001, "Engine handshake timeout");
     }, HANDSHAKE_TIMEOUT_MS);
     notifyBackground({
-      capturing: true,
+      capturing: stream !== null,
       connected: false,
       level: "connecting",
       message: isReconnect
@@ -176,7 +212,7 @@ function connectSocket(isReconnect = false) {
         authenticating = false;
       }
       notifyBackground({
-        capturing: true,
+        capturing: stream !== null,
         connected: false,
         level: "connecting",
         message: `Đang khởi động ${message.provider || "translation provider"}`,
@@ -192,13 +228,25 @@ function connectSocket(isReconnect = false) {
       startedReceived = true;
       clearTimeout(handshakeTimer);
       gatewayReady = true;
+      activeProviderPrepareMs = Number.isFinite(message.providerPrepareMs)
+        ? Math.max(0, Math.round(message.providerPrepareMs))
+        : null;
       flushPreroll(candidate);
+      const privacy = privacyLabelForProvider(message.provider || activeProvider, "tab");
+      resolvePreparation({
+        connected: true,
+        provider: message.provider || activeProvider,
+        providerPrepareMs: activeProviderPrepareMs,
+        privacy,
+      });
       notifyBackground({
-        capturing: true,
+        capturing: stream !== null,
         connected: true,
         level: "listening",
-        message: `Đang dịch ${message.sourceLanguage} → ${message.targetLanguage}`,
-        privacy: privacyLabelForProvider(message.provider || activeProvider, "tab"),
+        message: stream
+          ? `Đang dịch ${message.sourceLanguage} → ${message.targetLanguage}`
+          : "Provider đã sẵn sàng; đang chờ gắn audio tab",
+        privacy,
       });
       return;
     }
@@ -207,7 +255,7 @@ function connectSocket(isReconnect = false) {
         failCapture(message.message || "Local translation engine failed");
       } else {
         notifyBackground({
-          capturing: true,
+          capturing: stream !== null,
           connected: gatewayReady,
           level: "error",
           message: sanitizeStatusMessage(message.message, [activeSettings?.token || ""]),
@@ -221,7 +269,7 @@ function connectSocket(isReconnect = false) {
         ? ` · ${Math.round(message.detectionLatencyMs)} ms`
         : "";
       notifyBackground({
-        capturing: true,
+        capturing: stream !== null,
         connected: true,
         level: ["Unknown", "Low"].includes(message.confidence)
           ? "warning"
@@ -232,7 +280,7 @@ function connectSocket(isReconnect = false) {
     }
     if (message.type === "status") {
       notifyBackground({
-        capturing: true,
+        capturing: stream !== null,
         connected: gatewayReady,
         level: message.level || "connecting",
         message: sanitizeStatusMessage(
@@ -260,7 +308,7 @@ function connectSocket(isReconnect = false) {
       return;
     }
     notifyBackground({
-      capturing: true,
+      capturing: stream !== null,
       connected: false,
       level: "connecting",
       message: "Mất kết nối; audio vẫn phát và sẽ tự kết nối lại",
@@ -309,18 +357,37 @@ function sendOrQueuePcm(pcmBuffer) {
   preRoll.push(frame);
 }
 
-async function startCapture(streamId, settings) {
+async function prepareCapture(settings) {
   const safeSettings = sanitizeCaptureSettings(settings || {});
-  if (typeof streamId !== "string" || streamId.length < 1 || streamId.length > 2_048) {
-    throw new Error("Tab capture stream ID không hợp lệ");
-  }
   await stopCapture(false);
   running = true;
   fatalStopping = false;
   activeSettings = safeSettings;
   activeProvider = "";
+  activeProviderPrepareMs = null;
   sequence = 0;
   preRoll.clear();
+  const preparation = createPreparationPromise();
+
+  notifyBackground({
+    capturing: false,
+    connected: false,
+    level: "connecting",
+    message: "Đang xác thực local app và khởi động provider",
+    privacy: "Chưa capture audio tab; pairing token chỉ dùng với local app.",
+  });
+  connectSocket(false);
+  return preparation;
+}
+
+async function attachCapture(streamId) {
+  if (typeof streamId !== "string" || streamId.length < 1 || streamId.length > 2_048) {
+    throw new Error("Tab capture stream ID không hợp lệ");
+  }
+  if (!running || !gatewayReady || !activeSettings || !socket) {
+    throw new Error("Provider chưa sẵn sàng để nhận audio tab");
+  }
+  if (stream) throw new Error("Audio tab đã được gắn vào phiên hiện tại");
 
   try {
     // Consume the one-time tabCapture stream ID immediately; Chrome documents
@@ -360,12 +427,17 @@ async function startCapture(streamId, settings) {
     }
     notifyBackground({
       capturing: true,
-      connected: false,
-      level: "connecting",
-      message: "Đã capture tab; đang kết nối local app",
-      privacy: "Audio mới chỉ được giữ trong bộ nhớ cục bộ khi chờ provider xác nhận.",
+      connected: true,
+      level: "listening",
+      message: "Đang gửi audio tab tới provider đã sẵn sàng",
+      privacy: privacyLabelForProvider(activeProvider, "tab"),
     });
-    connectSocket(false);
+    return {
+      connected: true,
+      provider: activeProvider,
+      providerPrepareMs: activeProviderPrepareMs,
+      privacy: privacyLabelForProvider(activeProvider, "tab"),
+    };
   } catch (error) {
     const safeMessage = sanitizeStatusMessage(error.message, [activeSettings?.token || ""]);
     await stopCapture(false);
@@ -380,7 +452,13 @@ async function startCapture(streamId, settings) {
   }
 }
 
+async function startCapture(streamId, settings) {
+  await prepareCapture(settings);
+  return attachCapture(streamId);
+}
+
 async function stopCapture(notify = true) {
+  rejectPreparation(new Error("Đã dừng trước khi provider sẵn sàng"));
   running = false;
   clearTimeout(reconnectTimer);
   clearTimeout(handshakeTimer);
@@ -404,6 +482,7 @@ async function stopCapture(notify = true) {
   }
   socket = null;
   activeProvider = "";
+  activeProviderPrepareMs = null;
   activeSettings = null;
   fatalStopping = false;
   if (notify) {
@@ -429,17 +508,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ ok: false, error: "Nguồn yêu cầu capture không được phép" });
     return false;
   }
-  const task = enqueueOperation(() =>
-    message.type === "capture:start"
-      ? startCapture(message.streamId, message.settings).then(() => ({
+  let task;
+  switch (message.type) {
+    case "capture:prepare":
+      task = enqueueOperation(() =>
+        prepareCapture(message.settings).then((prepared) => ({ ok: true, ...prepared })),
+      );
+      break;
+    case "capture:attach":
+      task = enqueueOperation(() =>
+        attachCapture(message.streamId).then((attached) => ({ ok: true, ...attached })),
+      );
+      break;
+    case "capture:start":
+      task = enqueueOperation(() =>
+        startCapture(message.streamId, message.settings).then((attached) => ({
           ok: true,
-          connected: gatewayReady,
-          privacy: privacyLabelForProvider(activeProvider, "tab"),
-        }))
-      : message.type === "capture:stop"
-        ? stopCapture(true).then(() => ({ ok: true }))
-        : Promise.reject(new Error(`Unknown message: ${message.type}`)),
-  );
+          ...attached,
+        })),
+      );
+      break;
+    case "capture:stop":
+      rejectPreparation(new Error("Người dùng đã dừng khi provider đang khởi động"));
+      task = enqueueOperation(() => stopCapture(true).then(() => ({ ok: true })));
+      break;
+    default:
+      task = Promise.reject(new Error(`Unknown message: ${message.type}`));
+  }
   task.then(sendResponse, (error) =>
     sendResponse({
       ok: false,

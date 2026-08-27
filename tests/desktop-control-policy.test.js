@@ -6,6 +6,7 @@ const {
   beforeQuitAction,
   configureDesktopIdentity,
   controlWindowChromeOptions,
+  configFromDesktopSettings,
   desktopEditMenuTemplate,
   desktopSettingsMigrationPatch,
   assertGenericDesktopPatch,
@@ -21,6 +22,55 @@ const {
   shouldOpenDesktopGateway,
   settingsPatchRequiresRuntimeStop,
 } = require("../src/desktop-control-policy");
+
+test("desktop settings produce explicit Gemini low-latency provider options", () => {
+  const config = configFromDesktopSettings(
+    { host: "127.0.0.1", geminiModel: "gemini-test" },
+    {
+      provider: "gemini",
+      source: { language: "auto", languageHints: ["en-US"], targetLanguage: "vi" },
+      cloud: { consent: "gemini:audio:v1", maxMinutes: 15 },
+      captions: {
+        mode: "fastest",
+        echoTargetLanguage: false,
+        resetGapMs: 1100,
+        finalDebounceMs: 120,
+      },
+      translation: {
+        mode: "balanced",
+        transcriptionModel: "gemini-transcribe-test",
+        textModel: "gemini-flash-lite-test",
+        contextTurns: 5,
+        partialThrottleMs: 600,
+        glossary: "council = hội đồng",
+        characterContext: "Alex: older sister of Sam.",
+        unknown: "must-not-cross",
+      },
+      overlay: { showSource: false },
+    },
+    { authToken: "local-pairing", geminiApiKey: "cloud-secret" },
+  );
+
+  assert.equal(config.provider, "gemini");
+  assert.equal(config.sourceLanguage, "auto");
+  assert.deepEqual(config.sourceLanguageCandidates, ["en-US"]);
+  assert.equal(config.targetLanguage, "vi");
+  assert.equal(config.geminiInputTranscription, false);
+  assert.equal(config.geminiEchoTargetLanguage, false);
+  assert.equal(config.geminiFinalDebounceMs, 120);
+  assert.equal(config.captionResetGapMs, 1100);
+  assert.equal(config.showSource, false);
+  assert.equal(config.authToken, "local-pairing");
+  assert.equal(config.geminiApiKey, "cloud-secret");
+  assert.equal(config.geminiTranslationMode, "balanced");
+  assert.equal(config.geminiTranscriptionModel, "gemini-transcribe-test");
+  assert.equal(config.geminiTextModel, "gemini-flash-lite-test");
+  assert.equal(config.geminiContextTurns, 5);
+  assert.equal(config.geminiPartialThrottleMs, 600);
+  assert.equal(config.geminiGlossary, "council = hội đồng");
+  assert.equal(config.geminiCharacterContext, "Alex: older sister of Sam.");
+  assert.equal(Object.hasOwn(config, "unknown"), false);
+});
 
 test("desktop pairing reuses an environment token without persisting or exposing it", () => {
   const environmentToken = "environment-pairing-token-123456789";
@@ -124,9 +174,33 @@ test("provider start policy runs Demo as a synthetic preview and gates Gemini cl
 
 test("active runtime stops before source, language, or consent changes become visible", () => {
   assert.equal(settingsPatchRequiresRuntimeStop(false, { source: { language: "ja-JP" } }, {}), false);
-  assert.equal(settingsPatchRequiresRuntimeStop(true, { overlay: { showSource: false } }, {}), false);
+  assert.equal(settingsPatchRequiresRuntimeStop(true, { overlay: { showSource: false } }, {}), true);
   assert.equal(settingsPatchRequiresRuntimeStop(true, { source: { language: "ja-JP" } }, {}), true);
   assert.equal(settingsPatchRequiresRuntimeStop(true, { source: { kind: "file" } }, {}), true);
+  assert.equal(
+    settingsPatchRequiresRuntimeStop(
+      true,
+      { translation: { mode: "accurate" } },
+      { translation: { mode: "balanced" } },
+    ),
+    true,
+  );
+  assert.equal(
+    settingsPatchRequiresRuntimeStop(
+      true,
+      { captions: { mode: "bilingual" } },
+      { captions: { mode: "fastest" } },
+    ),
+    true,
+  );
+  assert.equal(
+    settingsPatchRequiresRuntimeStop(
+      true,
+      { captions: { echoTargetLanguage: true } },
+      { captions: { echoTargetLanguage: false } },
+    ),
+    true,
+  );
   assert.equal(
     settingsPatchRequiresRuntimeStop(
       true,
@@ -167,6 +241,7 @@ test("successful credential test is idle while a successful active provider is l
       queueMs: null,
       updatedAt: null,
     },
+    diagnostics: null,
   });
   assert.deepEqual(runtimeStateForStatus({ level: "error" }, false), {
     state: "error",
@@ -190,6 +265,7 @@ test("successful credential test is idle while a successful active provider is l
       queueMs: null,
       updatedAt: null,
     },
+    diagnostics: null,
   });
 });
 
@@ -240,6 +316,7 @@ test("runtime snapshot keeps errors truthful while exposing independent pause an
         queueMs: 41,
         updatedAt: 5_000,
       },
+      diagnostics: null,
     },
   );
   const paused = runtimeStateForStatus(

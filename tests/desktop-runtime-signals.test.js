@@ -66,6 +66,7 @@ test("desktop runtime signals reject stale generations and wrong-session events"
       queueMs: 45,
       updatedAt: 2_000,
     },
+    diagnostics: null,
   });
   assert.doesNotMatch(JSON.stringify(details), /private transcript|secret-key|pcm/);
 
@@ -77,6 +78,7 @@ test("desktop runtime signals reject stale generations and wrong-session events"
     detectedLanguage: null,
     languageDetectionMs: null,
     telemetry: null,
+    diagnostics: null,
   });
 });
 
@@ -98,4 +100,48 @@ test("telemetry reset clears meters without accepting transcript-shaped fields",
     transcript: "do not retain",
   }), true);
   assert.equal(signals.details().telemetry, null);
+});
+
+test("runtime metric snapshots cross desktop signals through a strict numeric allowlist", () => {
+  const signals = new DesktopRuntimeSignals();
+  const generation = signals.attachGateway();
+  signals.beginSession(generation, "session-metrics");
+
+  const details = signals.details({
+    metrics: {
+      providerPrepareMs: { latest: 420, p50: 390, p95: 510, count: 4 },
+      liveEdgeToPartialMs: { latest: 630, p50: 580, p95: 840, count: 8 },
+      transcript: { latest: 999, p50: 999, p95: 999, count: 1 },
+    },
+    usage: {
+      promptTokenCount: 120,
+      responseTokenCount: 30,
+      totalTokenCount: 150,
+      audio: "private-audio",
+      transcript: "private-text",
+    },
+    caption: "private-caption",
+  });
+
+  assert.deepEqual(details.diagnostics.metrics.providerPrepareMs, {
+    latest: 420,
+    p50: 390,
+    p95: 510,
+    count: 4,
+  });
+  assert.deepEqual(details.diagnostics.metrics.liveEdgeToPartialMs, {
+    latest: 630,
+    p50: 580,
+    p95: 840,
+    count: 8,
+  });
+  assert.deepEqual(details.diagnostics.usage, {
+    promptTokenCount: 120,
+    responseTokenCount: 30,
+    totalTokenCount: 150,
+  });
+  assert.doesNotMatch(
+    JSON.stringify(details),
+    /private|caption|transcript|audio|bytes|data/i,
+  );
 });

@@ -165,6 +165,7 @@ test("offscreen capture queues PCM until the gateway acknowledges started", () =
     Promise,
     SharedArrayBuffer,
     String,
+    TextEncoder,
     URL,
     Uint8Array,
     WebSocket: { OPEN: 1 },
@@ -260,6 +261,190 @@ test("offscreen start handshake carries authentication but no language authority
     protocolVersion: 1,
     authentication,
   });
+});
+
+test("offscreen prepares an authenticated provider before requesting tab media", async () => {
+  const helperSource = fs.readFileSync(
+    path.join(projectRoot, "extension", "realtime-security.js"),
+    "utf8",
+  );
+  const offscreenSource = fs.readFileSync(
+    path.join(projectRoot, "extension", "offscreen.js"),
+    "utf8",
+  );
+  const sockets = [];
+  let getUserMediaCalls = 0;
+  const track = {
+    addEventListener() {},
+    stop() {},
+  };
+  const mediaStream = {
+    getAudioTracks: () => [track],
+    getTracks: () => [track],
+  };
+
+  class FakeWebSocket {
+    static OPEN = 1;
+    constructor() {
+      this.readyState = 0;
+      this.bufferedAmount = 0;
+      this.sent = [];
+      this.listeners = new Map();
+      sockets.push(this);
+    }
+    addEventListener(type, listener) {
+      const listeners = this.listeners.get(type) || [];
+      listeners.push(listener);
+      this.listeners.set(type, listeners);
+    }
+    emit(type, event = {}) {
+      for (const listener of this.listeners.get(type) || []) listener(event);
+    }
+    send(value) {
+      this.sent.push(value);
+    }
+    close() {
+      this.readyState = 3;
+    }
+  }
+
+  class FakeAudioContext {
+    constructor() {
+      this.state = "running";
+      this.destination = {};
+      this.audioWorklet = { addModule: async () => {} };
+    }
+    createMediaStreamSource() {
+      return { connect() {} };
+    }
+    async resume() {}
+    async close() {
+      this.state = "closed";
+    }
+  }
+
+  class FakeAudioWorkletNode {
+    constructor() {
+      this.port = { onmessage: null };
+    }
+    connect() {}
+    disconnect() {}
+  }
+
+  const context = vm.createContext({
+    AbortController,
+    ArrayBuffer,
+    AudioContext: FakeAudioContext,
+    AudioWorkletNode: FakeAudioWorkletNode,
+    DataView,
+    Date,
+    JSON,
+    Math,
+    Promise,
+    SharedArrayBuffer,
+    String,
+    TextEncoder,
+    URL,
+    Uint8Array,
+    WebSocket: FakeWebSocket,
+    atob,
+    btoa,
+    chrome: {
+      runtime: {
+        id: "a".repeat(32),
+        onMessage: { addListener() {} },
+        sendMessage: async () => ({}),
+      },
+    },
+    clearTimeout,
+    console,
+    crypto: crypto.webcrypto,
+    navigator: {
+      mediaDevices: {
+        async getUserMedia() {
+          getUserMediaCalls += 1;
+          return mediaStream;
+        },
+      },
+    },
+    setTimeout,
+  });
+  vm.runInContext(helperSource, context);
+  vm.runInContext(
+    `${offscreenSource}\n;globalThis.__warmStartTest = { prepareCapture, attachCapture, stopCapture };`,
+    context,
+  );
+
+  const settings = validSettings();
+  const preparing = context.__warmStartTest.prepareCapture(settings);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(getUserMediaCalls, 0);
+  assert.equal(sockets.length, 1);
+
+  const socket = sockets[0];
+  socket.readyState = FakeWebSocket.OPEN;
+  socket.emit("open");
+  const nonce = crypto.randomBytes(32).toString("base64url");
+  socket.emit("message", {
+    data: JSON.stringify({
+      type: "hello",
+      protocolVersion: 1,
+      provider: "gemini",
+      authRequired: true,
+      authentication: {
+        scheme: security.AUTH_SCHEME,
+        nonce,
+        serverProof: crypto
+          .createHmac("sha256", settings.token)
+          .update(`ATR1|server|${nonce}`)
+          .digest("base64url"),
+      },
+    }),
+  });
+  for (let attempt = 0; attempt < 100 && socket.sent.length === 0; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+  assert.equal(socket.sent.length, 1);
+  const start = JSON.parse(socket.sent[0]);
+  assert.deepEqual(Object.keys(start).sort(), ["authentication", "protocolVersion", "type"]);
+  assert.doesNotMatch(JSON.stringify(start), /safe-pairing|api.?key|sourceLanguage/i);
+  assert.equal(getUserMediaCalls, 0);
+
+  socket.emit("message", {
+    data: JSON.stringify({
+      type: "started",
+      provider: "gemini",
+      sourceLanguage: "auto",
+      targetLanguage: "vi",
+      providerPrepareMs: 420,
+    }),
+  });
+  const prepared = await preparing;
+  assert.equal(prepared.connected, true);
+  assert.equal(prepared.providerPrepareMs, 420);
+  assert.equal(getUserMediaCalls, 0);
+
+  const attached = await context.__warmStartTest.attachCapture("one-time-stream-id");
+  assert.equal(attached.connected, true);
+  assert.equal(getUserMediaCalls, 1);
+  await context.__warmStartTest.stopCapture(false);
+});
+
+test("background loads the lifecycle coordinator before requesting a tab stream", () => {
+  const source = fs.readFileSync(
+    path.join(projectRoot, "extension", "background.js"),
+    "utf8",
+  );
+  assert.match(source, /importScripts\([^)]*capture-lifecycle\.js/);
+  assert.match(source, /prepareThenAttach/);
+  assert.match(source, /type:\s*"capture:prepare"/);
+  assert.match(source, /type:\s*"capture:attach"/);
+  const stopCase = source.slice(
+    source.indexOf('case "capture:stop"'),
+    source.indexOf('case "capture:get-state"'),
+  );
+  assert.match(stopCase, /await stopCapture\(\)/);
+  assert.doesNotMatch(stopCase, /enqueueLifecycle/);
 });
 
 test("provider privacy labels distinguish Gemini cloud from local demo", () => {

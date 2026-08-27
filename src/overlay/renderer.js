@@ -2,7 +2,7 @@ const statusElement = document.getElementById("status");
 const statusText = document.getElementById("status-text");
 const captionCard = document.getElementById("caption-card");
 const finalLines = document.getElementById("final-lines");
-const partialLine = document.getElementById("partial-line");
+const translatedLine = document.getElementById("partial-line");
 const sourceLine = document.getElementById("source-line");
 const draftBadge = document.getElementById("draft-badge");
 const overflowBadge = document.getElementById("overflow-badge");
@@ -12,17 +12,21 @@ const safeGuide = document.getElementById("safe-guide");
 const finalAnnouncer = document.getElementById("final-announcer");
 
 const state = {
-  finals: [],
-  partial: null,
-  lastSequence: -1,
-  sessionId: null,
   activeCaption: null,
   lastStatusLevel: "idle",
   preferences: {
     hideAfterMs: 8000,
-    showSource: true,
+    showSource: false,
+    maxTranslationLines: 2,
+    captionResetGapMs: 1100,
   },
 };
+
+const liveCaptionBlock = AudioTranslateLiveCaptionBlock.createLiveCaptionBlock({
+  resetGapMs: state.preferences.captionResetGapMs,
+});
+const measurementCanvas = document.createElement("canvas");
+const measurementContext = measurementCanvas.getContext?.("2d") || null;
 
 const captionVisibility =
   AudioTranslateCaptionComposer.createCaptionVisibilityController({
@@ -35,14 +39,70 @@ const captionVisibility =
     },
   });
 
-function addTextLine(container, className, value) {
-  const line = document.createElement("div");
-  line.className = className;
-  line.textContent = value;
-  container.appendChild(line);
+function pixels(value) {
+  const number = Number.parseFloat(String(value ?? ""));
+  return Number.isFinite(number) ? number : 0;
 }
 
-function captionMetadata(caption, pageMetadata) {
+function contentWidth() {
+  const cardStyle = getComputedStyle(captionCard);
+  const measuredCardWidth =
+    Number(captionCard.clientWidth) ||
+    Number(captionCard.getBoundingClientRect?.().width) ||
+    Number(window.innerWidth) ||
+    0;
+  return Math.max(
+    0,
+    measuredCardWidth - pixels(cardStyle.paddingLeft) - pixels(cardStyle.paddingRight),
+  );
+}
+
+function measurementFor(element) {
+  if (!measurementContext) return null;
+  const style = getComputedStyle(element);
+  const composedFont = [
+    style.fontStyle || "normal",
+    style.fontVariant || "normal",
+    style.fontWeight || "400",
+    style.fontSize || "16px",
+    style.fontFamily || "sans-serif",
+  ].join(" ");
+  measurementContext.font = style.font && style.font !== "normal" ? style.font : composedFont;
+  const letterSpacing = pixels(style.letterSpacing);
+  return (value) => {
+    const text = String(value ?? "");
+    const width = measurementContext.measureText(text).width;
+    return (
+      width +
+      Math.max(0, AudioTranslateCaptionComposer.graphemeCount(text) - 1) * letterSpacing
+    );
+  };
+}
+
+function paginateTranslation(value) {
+  const requestedLines = Number(state.preferences.maxTranslationLines);
+  const maxLines = Number.isFinite(requestedLines)
+    ? Math.min(2, Math.max(1, Math.floor(requestedLines)))
+    : 2;
+  return AudioTranslateCaptionComposer.composeMeasuredText(value, {
+    maxLines,
+    maxWidth: contentWidth(),
+    measureText: measurementFor(translatedLine),
+    fallbackMaxGraphemesPerLine: 52,
+  });
+}
+
+function latestMeasuredPage(value, element, maxLines) {
+  const composition = AudioTranslateCaptionComposer.composeMeasuredText(value, {
+    maxLines,
+    maxWidth: contentWidth(),
+    measureText: measurementFor(element),
+    fallbackMaxGraphemesPerLine: maxLines === 1 ? 84 : 52,
+  });
+  return composition.rollingPage || composition.pages.at(-1) || null;
+}
+
+function captionMetadata(caption, snapshot) {
   const metadata = [];
   if (caption?.sourceLanguageMode === "auto" && caption.sourceLanguage) {
     const details = [caption.languageDetectionConfidence]
@@ -55,120 +115,100 @@ function captionMetadata(caption, pageMetadata) {
       .join("/");
     metadata.push(`${caption.sourceLanguage}${details ? ` · LID ${details}` : ""}`);
   }
-  if (Number.isFinite(caption?.latencyMs)) metadata.push(`~${Math.round(caption.latencyMs)} ms`);
-  if (pageMetadata.pageCount > 1 && !pageMetadata.rolling) {
-    metadata.push(`Trang ${pageMetadata.pageIndex + 1}/${pageMetadata.pageCount}`);
-  }
+  const liveEdge = Number.isFinite(caption?.liveEdgeToPartialMs)
+    ? caption.liveEdgeToPartialMs
+    : caption?.latencyMs;
+  if (Number.isFinite(liveEdge)) metadata.push(`~${Math.round(liveEdge)} ms`);
+  if (snapshot.pageCount > 1) metadata.push("2 dòng mới nhất");
   return metadata.join(" · ");
 }
 
-function renderCaptionPage(page, pageMetadata) {
-  const caption = pageMetadata.context.caption;
+function renderSource(caption, showSource) {
+  const sourceText = showSource ? String(caption?.transcript || "") : "";
+  const sourcePage = sourceText ? latestMeasuredPage(sourceText, sourceLine, 1) : null;
+  sourceLine.textContent = sourcePage?.text || "";
+  sourceLine.classList.toggle("hidden", !sourceLine.textContent);
+}
+
+function renderSnapshot(snapshot, caption, options = {}) {
+  // Keep exactly one translated DOM node for partial and final updates. Replacing
+  // only textContent prevents layout churn and avoids replaying old caption pages.
   finalLines.replaceChildren();
-  if (pageMetadata.isFinal && page.translation) {
-    addTextLine(finalLines, "translation", page.translation);
+  finalLines.classList.add("hidden");
+  translatedLine.textContent = snapshot.text;
+  translatedLine.classList.toggle("hidden", !snapshot.text);
+  translatedLine.classList.toggle("partial", snapshot.isFinal !== true);
+  draftBadge.classList.add("hidden");
+
+  const showSource =
+    state.preferences.showSource === true &&
+    caption?.showSource !== false &&
+    Boolean(caption?.translation && caption?.transcript);
+  renderSource(caption, showSource);
+
+  overflowBadge.textContent = snapshot.overflow ? "DÀI · ĐANG CUỘN" : "";
+  overflowBadge.classList.toggle("hidden", !snapshot.overflow);
+  captionCard.dataset.overflow = String(snapshot.overflow);
+  captionCard.dataset.needsReview = String(snapshot.overflow);
+  captionCard.dataset.pageIndex = String(snapshot.pageIndex);
+  captionCard.dataset.pageCount = String(snapshot.pageCount);
+  latencyElement.textContent = captionMetadata(caption, snapshot);
+
+  if (!snapshot.text) {
+    captionCard.classList.add("hidden");
+    return;
   }
-
-  partialLine.textContent = pageMetadata.isFinal ? "" : page.translation;
-  partialLine.classList.toggle("hidden", pageMetadata.isFinal || !page.translation);
-  draftBadge.classList.toggle("hidden", pageMetadata.isFinal);
-
-  const shouldShowSource = pageMetadata.context.showSource && page.source;
-  sourceLine.textContent = shouldShowSource ? page.source : "";
-  sourceLine.classList.toggle("hidden", !shouldShowSource);
-
-  overflowBadge.textContent = pageMetadata.overflow
-    ? pageMetadata.rolling
-      ? "DÀI · ĐANG CUỘN"
-      : `DÀI · ${pageMetadata.pageIndex + 1}/${pageMetadata.pageCount}`
-    : "";
-  overflowBadge.classList.toggle("hidden", !pageMetadata.overflow);
-  captionCard.dataset.overflow = String(pageMetadata.overflow);
-  captionCard.dataset.needsReview = String(pageMetadata.needsReview);
-  captionCard.dataset.pageIndex = String(pageMetadata.pageIndex);
-  captionCard.dataset.pageCount = String(pageMetadata.pageCount);
-  latencyElement.textContent = captionMetadata(caption, pageMetadata);
-
   captionCard.classList.remove("hidden");
   statusElement.classList.add("hidden");
-  captionVisibility.show({
-    isFinal: pageMetadata.isFinal,
-    hideAfterMs: state.preferences.hideAfterMs,
-  });
-
-  if (pageMetadata.isFirstEmission) {
-    requestAnimationFrame(() => {
-      window.audioTranslate.reportRendered({
-        sequence: caption.sequence,
-        isFinal: caption.isFinal,
-        rafAt: Date.now(),
-        resultToRafMs: Math.max(0, Date.now() - Number(caption.emittedAt || Date.now())),
-      });
+  if (options.updateVisibility !== false) {
+    captionVisibility.show({
+      isFinal: snapshot.isFinal,
+      hideAfterMs: state.preferences.hideAfterMs,
     });
+  }
+  if (snapshot.isFinal && options.announce !== false) {
+    finalAnnouncer.textContent = snapshot.semanticText;
   }
 }
 
-const captionPager = AudioTranslateCaptionComposer.createCaptionPager({
-  onPage: renderCaptionPage,
-});
-
-function showCaption(caption) {
-  const primaryText = caption.translation || caption.transcript || "";
-  const showSource =
-    state.preferences.showSource !== false &&
-    caption.showSource !== false &&
-    Boolean(caption.translation && caption.transcript);
-  const composition = AudioTranslateCaptionComposer.composeCaption(
-    {
-      translation: primaryText,
-      transcript: showSource ? caption.transcript : "",
-    },
-    {
-      maxLines: state.preferences.maxTranslationLines || 2,
-      maxGraphemesPerLine: 42,
-      sourceMaxLines: 1,
-      sourceMaxGraphemesPerLine: 84,
-    },
-  );
-  captionPager.show(composition, {
-    isFinal: caption.isFinal,
-    rolling: true,
-    context: { caption, showSource },
+function reportRendered(caption) {
+  requestAnimationFrame(() => {
+    const rafAt = Date.now();
+    const emittedAt = Number(caption?.emittedAt);
+    window.audioTranslate.reportRendered({
+      sessionId: caption?.sessionId == null ? null : String(caption.sessionId),
+      generation: Number.isFinite(caption?.generation) ? Number(caption.generation) : null,
+      sequence: Number.isFinite(caption?.sequence) ? Number(caption.sequence) : null,
+      isFinal: caption?.isFinal === true,
+      rafAt,
+      resultToRafMs: Number.isFinite(emittedAt) ? Math.max(0, rafAt - emittedAt) : 0,
+    });
   });
 }
 
 function renderCaption(caption) {
   if (!caption || caption.type !== "caption") return;
-  if (caption.sessionId && caption.sessionId !== state.sessionId) {
-    state.finals = [];
-    state.partial = null;
-    state.lastSequence = -1;
-    state.sessionId = caption.sessionId;
-  }
-  if (Number.isFinite(caption.sequence) && caption.sequence < state.lastSequence) return;
-  if (Number.isFinite(caption.sequence)) state.lastSequence = caption.sequence;
-
-  if (caption.isFinal) {
-    state.partial = null;
-    if (caption.translation || caption.transcript) {
-      const previous = state.finals[state.finals.length - 1];
-      if (
-        !previous ||
-        previous.translation !== caption.translation ||
-        previous.transcript !== caption.transcript
-      ) {
-        state.finals.push(caption);
-      } else {
-        return;
-      }
-      state.finals = state.finals.slice(-2);
-      finalAnnouncer.textContent = caption.translation || caption.transcript;
-    }
-  } else {
-    state.partial = caption;
-  }
+  const previousMetadata = liveCaptionBlock.snapshot().metadata;
+  const snapshot = liveCaptionBlock.apply(caption, paginateTranslation);
+  if (snapshot.metadata === previousMetadata) return;
   state.activeCaption = caption;
-  showCaption(caption);
+  renderSnapshot(snapshot, caption);
+  reportRendered(caption);
+}
+
+let reflowScheduled = false;
+function scheduleReflow() {
+  if (reflowScheduled) return;
+  reflowScheduled = true;
+  requestAnimationFrame(() => {
+    reflowScheduled = false;
+    if (!state.activeCaption || !liveCaptionBlock.snapshot().semanticText) return;
+    const snapshot = liveCaptionBlock.reflow(paginateTranslation);
+    renderSnapshot(snapshot, state.activeCaption, {
+      announce: false,
+      updateVisibility: false,
+    });
+  });
 }
 
 window.audioTranslate.onCaption(renderCaption);
@@ -188,14 +228,22 @@ window.audioTranslate.onInteraction(({ clickThrough }) => {
 window.audioTranslate.onPreferences((preferences = {}) => {
   state.preferences = { ...state.preferences, ...preferences };
   const root = document.documentElement;
-  root.style.setProperty("--translation-size", `${preferences.translationFontSize || 36}px`);
-  root.style.setProperty("--source-size", `${preferences.sourceFontSize || 17}px`);
-  root.style.setProperty("--caption-weight", String(preferences.fontWeight || 700));
-  root.style.setProperty("--caption-line-height", String(preferences.lineHeight || 1.24));
-  root.style.setProperty("--panel-opacity", String(preferences.backgroundOpacity ?? 0.92));
-  document.body.classList.toggle("high-contrast", preferences.highContrast !== false);
-  if (state.activeCaption) showCaption(state.activeCaption);
+  const translationFontSize = Number(state.preferences.translationFontSize) || 36;
+  const captionLineHeight = Number(state.preferences.lineHeight) || 1.24;
+  root.style.setProperty("--translation-size", `${translationFontSize}px`);
+  root.style.setProperty("--source-size", `${state.preferences.sourceFontSize || 17}px`);
+  root.style.setProperty("--caption-weight", String(state.preferences.fontWeight || 700));
+  root.style.setProperty("--caption-line-height", String(captionLineHeight));
+  root.style.setProperty(
+    "--caption-two-line-height",
+    `${Math.ceil(translationFontSize * captionLineHeight * 2)}px`,
+  );
+  root.style.setProperty("--panel-opacity", String(state.preferences.backgroundOpacity ?? 0.92));
+  document.body.classList.toggle("high-contrast", state.preferences.highContrast !== false);
+  liveCaptionBlock.setResetGapMs(state.preferences.captionResetGapMs);
+  scheduleReflow();
 });
+window.addEventListener("resize", scheduleReflow);
 
 document.getElementById("lock-overlay").addEventListener("click", () => {
   window.audioTranslate.setLocked(true);

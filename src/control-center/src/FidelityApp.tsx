@@ -49,6 +49,7 @@ import { describeSessionDisplay } from "./session-display.mjs";
 import { describeDetectedLanguage, describeLatency, meterSegments } from "./runtime-insights.mjs";
 import { describeTransportControls } from "./transport-controls.mjs";
 import { diagnosticActionTarget, describeDiagnosticsOverall } from "./diagnostics-display.mjs";
+import { describeTranslationProfile } from "./translation-profile.mjs";
 import type {
   CaptionPreview,
   ControlCenterSnapshot,
@@ -59,6 +60,8 @@ import type {
   OverlaySettings,
   ProviderId,
   SourceKind,
+  TranslationMode,
+  TranslationSettings,
 } from "./types";
 
 const client = getControlCenterClient();
@@ -74,6 +77,15 @@ const fallbackSnapshot: ControlCenterSnapshot = {
   pairing: { configured: false, storage: "unavailable" },
   source: { kind: "browser-tab", connected: false, label: "Chưa kết nối tab" },
   languages: { source: "auto", target: "vi", detected: null, detectionMs: null },
+  translation: {
+    mode: "balanced",
+    transcriptionModel: "gemini-3.5-transcribe-live",
+    textModel: "gemini-3.5-flash-lite",
+    contextTurns: 4,
+    partialThrottleMs: 450,
+    glossary: "",
+    characterContext: "",
+  },
   privacy: { cloudConsent: false, maxCloudMinutes: 30 },
   overlay: {
     preset: "cinema",
@@ -116,6 +128,7 @@ type BusyAction =
   | "provider"
   | "copy-pairing"
   | "source"
+  | "translation"
   | "session"
   | "pause"
   | "diagnostics"
@@ -289,6 +302,8 @@ export function App() {
     snapshot.session.active,
   );
   const canStopSession = snapshot.session.canStop ?? sessionDisplay.canStop;
+  const translationLocked = snapshot.session.active === true || canStopSession;
+  const activeTranslationProfile = describeTranslationProfile(snapshot.translation.mode);
   const transport = describeTransportControls({
     ...snapshot.session,
     canStop: canStopSession,
@@ -352,6 +367,18 @@ export function App() {
     void client.updateLanguages(languages).then(setSnapshot).catch((error: unknown) => {
       setUiError(error instanceof Error ? error.message : "Không thể đổi ngôn ngữ");
     });
+  }
+
+  function stageTranslation(next: Partial<TranslationSettings>) {
+    setSnapshot((current) => ({
+      ...current,
+      translation: { ...current.translation, ...next },
+    }));
+  }
+
+  function updateTranslation(next: Partial<TranslationSettings>) {
+    stageTranslation(next);
+    void runAction("translation", () => client.updateTranslation(next));
   }
 
   function updateOverlay(next: Partial<OverlaySettings>) {
@@ -622,6 +649,96 @@ export function App() {
               <span className="language-detection-icon"><Translate size={17} /></span>
               <span><strong>Ngôn ngữ phát hiện</strong><small>{languageInsight.detail}</small></span>
               <b>{languageInsight.label}</b>
+            </div>
+
+            <div className="translation-profile-section">
+              <div className="translation-profile-heading">
+                <span><Gauge size={16} /></span>
+                <span><strong>Chất lượng bản dịch</strong><small>Chọn ưu tiên độ trễ hay ngữ cảnh</small></span>
+                {translationLocked && <b>Hãy dừng phiên để đổi</b>}
+              </div>
+              <div className="translation-profile-grid" role="radiogroup" aria-label="Chế độ dịch Gemini">
+                {(["fastest", "balanced", "accurate"] as TranslationMode[]).map((mode) => {
+                  const profile = describeTranslationProfile(mode);
+                  return <button
+                    key={mode}
+                    type="button"
+                    role="radio"
+                    aria-checked={snapshot.translation.mode === mode}
+                    data-selected={snapshot.translation.mode === mode}
+                    disabled={translationLocked || busy !== null}
+                    onClick={() => updateTranslation({ mode })}
+                  >
+                    <span><strong>{profile.label}</strong><em>{profile.badge}</em></span>
+                    <small>{profile.summary}</small>
+                  </button>;
+                })}
+              </div>
+              <p className="translation-profile-summary" data-contextual={activeTranslationProfile.contextual}>
+                {activeTranslationProfile.contextual
+                  ? <><ShieldCheck size={14} /> Lịch sử câu chỉ nằm trong RAM; glossary/ghi chú được lưu cục bộ và chỉ gửi tới Google khi chế độ này chạy.</>
+                  : <><Gauge size={14} /> Đường truyền ngắn nhất; phù hợp khi độ trễ quan trọng hơn xử lý giới tính và ngữ cảnh dài.</>}
+              </p>
+
+              {activeTranslationProfile.contextual && <details className="translation-context-controls">
+                <summary><Translate size={15} /> Ngữ cảnh nâng cao <small>Giảm dịch từng từ, giữ tên gọi và vai nhân vật</small></summary>
+                <div className="translation-context-body">
+                  <div className="translation-model-route">
+                    <span><small>Nhận dạng</small><strong>{snapshot.translation.transcriptionModel}</strong></span>
+                    <ArrowRight size={14} />
+                    <span><small>Dịch</small><strong>{snapshot.translation.textModel}</strong></span>
+                  </div>
+                  <div className="translation-tuning-row">
+                    <label>
+                      <span>Số câu ngữ cảnh</span>
+                      <select
+                        value={snapshot.translation.contextTurns}
+                        disabled={translationLocked || busy !== null}
+                        onChange={(event) => updateTranslation({ contextTurns: Number(event.currentTarget.value) })}
+                      >
+                        {[0, 1, 2, 3, 4, 5, 6].map((count) => <option key={count} value={count}>{count === 0 ? "Tắt" : `${count} câu`}</option>)}
+                      </select>
+                    </label>
+                    {activeTranslationProfile.partialTranslation && <label>
+                      <span>Nhịp cập nhật bản nháp</span>
+                      <select
+                        value={snapshot.translation.partialThrottleMs}
+                        disabled={translationLocked || busy !== null}
+                        onChange={(event) => updateTranslation({ partialThrottleMs: Number(event.currentTarget.value) })}
+                      >
+                        <option value={250}>250 ms · nhanh</option>
+                        <option value={450}>450 ms · cân bằng</option>
+                        <option value={700}>700 ms · ổn định</option>
+                        <option value={1_000}>1 giây · tiết kiệm</option>
+                      </select>
+                    </label>}
+                  </div>
+                  <label className="translation-context-field">
+                    <span><strong>Thuật ngữ / cách dịch cố định</strong><small>Mỗi dòng: từ gốc = bản dịch, ví dụ “council = hội đồng”</small></span>
+                    <textarea
+                      value={snapshot.translation.glossary}
+                      maxLength={4_000}
+                      rows={3}
+                      disabled={translationLocked || busy !== null}
+                      placeholder="Stormhold = thành Stormhold"
+                      onChange={(event) => stageTranslation({ glossary: event.currentTarget.value })}
+                      onBlur={(event) => updateTranslation({ glossary: event.currentTarget.value })}
+                    />
+                  </label>
+                  <label className="translation-context-field">
+                    <span><strong>Nhân vật & hoàn cảnh đã biết</strong><small>Chỉ ghi sự thật chắc chắn; công cụ không tự suy đoán giới tính.</small></span>
+                    <textarea
+                      value={snapshot.translation.characterContext}
+                      maxLength={4_000}
+                      rows={3}
+                      disabled={translationLocked || busy !== null}
+                      placeholder="Alex: nữ; chị của Sam; lãnh đạo hội đồng."
+                      onChange={(event) => stageTranslation({ characterContext: event.currentTarget.value })}
+                      onBlur={(event) => updateTranslation({ characterContext: event.currentTarget.value })}
+                    />
+                  </label>
+                </div>
+              </details>}
             </div>
           </section>
 

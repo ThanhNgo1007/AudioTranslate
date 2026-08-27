@@ -1,4 +1,4 @@
-importScripts("realtime-security.js");
+importScripts("realtime-security.js", "capture-lifecycle.js");
 
 const {
   isTrustedExtensionPage,
@@ -6,6 +6,7 @@ const {
   sanitizeCaptureSettings,
   sanitizeStatusMessage,
 } = AudioTranslateSecurity;
+const { prepareThenAttach } = AudioTranslateCaptureLifecycle;
 const OFFSCREEN_URL = "offscreen.html";
 const DEFAULT_STATE = {
   starting: false,
@@ -20,6 +21,7 @@ const DEFAULT_STATE = {
 };
 let creatingOffscreen = null;
 let lifecycle = Promise.resolve();
+let captureGeneration = 0;
 
 async function getState() {
   const stored = await chrome.storage.session.get("captureState");
@@ -81,6 +83,7 @@ function enqueueLifecycle(task) {
 }
 
 async function startCapture(settings) {
+  const generation = ++captureGeneration;
   const safeSettings = sanitizeCaptureSettings(settings);
   const current = await getState();
   if (current.starting || current.capturing) {
@@ -95,21 +98,43 @@ async function startCapture(settings) {
     tabId: tab.id,
     tabTitle: tab.title || "Tab hiện tại",
     level: "connecting",
-    message: "Đang mở audio stream của tab",
-    privacy: "Audio mới chỉ được capture cục bộ; đang xác minh provider trước khi truyền đi.",
+    message: "Đang khởi động provider trước khi capture tab",
+    privacy: "Chưa capture audio; đang xác minh local app và khởi động provider.",
   });
   let response;
   try {
     await ensureOffscreenDocument();
-    const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
-    response = await chrome.runtime.sendMessage({
-      target: "offscreen",
-      type: "capture:start",
-      streamId,
-      settings: safeSettings,
+    const lifecycleResult = await prepareThenAttach({
+      async prepareLocalSession() {
+        const prepared = await chrome.runtime.sendMessage({
+          target: "offscreen",
+          type: "capture:prepare",
+          settings: safeSettings,
+        });
+        if (!prepared?.ok || prepared.connected !== true) {
+          throw new Error(prepared?.error || "Provider chưa sẵn sàng");
+        }
+        return prepared;
+      },
+      getTabStreamId: () => chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id }),
+      async attachTabStream(streamId) {
+        const attached = await chrome.runtime.sendMessage({
+          target: "offscreen",
+          type: "capture:attach",
+          streamId,
+        });
+        if (!attached?.ok || attached.connected !== true) {
+          throw new Error(attached?.error || "Không thể gắn audio stream của tab");
+        }
+        return attached;
+      },
+      async cancelPreparedSession() {
+        await chrome.runtime.sendMessage({ target: "offscreen", type: "capture:stop" });
+      },
     });
-    if (!response?.ok) throw new Error(response?.error || "Không thể bắt đầu capture");
+    response = lifecycleResult.attachment;
   } catch (error) {
+    if (generation !== captureGeneration) return getState();
     await setState({
       starting: false,
       capturing: false,
@@ -121,6 +146,7 @@ async function startCapture(settings) {
     throw new Error(sanitizeStatusMessage(error.message, [safeSettings.token]));
   }
 
+  if (generation !== captureGeneration) return getState();
   return setState({
     starting: false,
     capturing: true,
@@ -136,6 +162,7 @@ async function startCapture(settings) {
 }
 
 async function stopCapture() {
+  captureGeneration += 1;
   try {
     await chrome.runtime.sendMessage({ target: "offscreen", type: "capture:stop" });
   } catch {
@@ -174,7 +201,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           state: await enqueueLifecycle(() => startCapture(message.settings || {})),
         };
       case "capture:stop":
-        return { ok: true, state: await enqueueLifecycle(() => stopCapture()) };
+        return { ok: true, state: await stopCapture() };
       case "capture:get-state":
         return { ok: true, state: await getState() };
       case "offscreen:status":
@@ -205,6 +232,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 chrome.tabCapture.onStatusChanged.addListener(async (info) => {
   const state = await getState();
   if (state.tabId === info.tabId && ["stopped", "error"].includes(info.status)) {
-    await enqueueLifecycle(() => stopCapture());
+    await stopCapture();
   }
 });

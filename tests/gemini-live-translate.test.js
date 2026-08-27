@@ -53,6 +53,7 @@ function createHarness(overrides = {}) {
   const errors = [];
   const terminals = [];
   const detections = [];
+  const usages = [];
   const factoryKeys = [];
   let connectImpl = overrides.connectImpl;
 
@@ -92,6 +93,7 @@ function createHarness(overrides = {}) {
     onError: (error) => errors.push(error),
     onTerminal: (error) => terminals.push(error),
     onLanguageDetected: (detection) => detections.push(detection),
+    onUsage: (usage) => usages.push(usage),
     ...overrides,
   });
 
@@ -105,6 +107,7 @@ function createHarness(overrides = {}) {
     errors,
     terminals,
     detections,
+    usages,
     factoryKeys,
     setConnectImpl(implementation) {
       connectImpl = implementation;
@@ -112,7 +115,7 @@ function createHarness(overrides = {}) {
   };
 }
 
-test("connects to the Gemini translation model with secure resumable audio config", async () => {
+test("connects to Gemini in output-only low-latency mode by default", async () => {
   const harness = createHarness();
   assert.doesNotMatch(JSON.stringify(harness.provider), /gemini-test-secret/);
 
@@ -122,11 +125,11 @@ test("connects to the Gemini translation model with secure resumable audio confi
   const request = harness.connects[0];
   assert.equal(request.model, DEFAULT_MODEL);
   assert.deepEqual(request.config.responseModalities, ["AUDIO"]);
-  assert.deepEqual(request.config.inputAudioTranscription, {});
+  assert.equal("inputAudioTranscription" in request.config, false);
   assert.deepEqual(request.config.outputAudioTranscription, {});
   assert.deepEqual(request.config.translationConfig, {
     targetLanguageCode: "vi",
-    echoTargetLanguage: true,
+    echoTargetLanguage: false,
   });
   assert.deepEqual(request.config.contextWindowCompression, { slidingWindow: {} });
   assert.deepEqual(request.config.sessionResumption, {});
@@ -157,8 +160,12 @@ test("privacy mode rotates into a fresh session without retaining resumable stat
   await harness.provider.stop();
 });
 
-test("fixed source language becomes a transcription hint without disabling translation", async () => {
-  const harness = createHarness({ sourceLanguage: "en-US", echoTargetLanguage: false });
+test("bilingual fixed-source mode adds one transcription hint without disabling translation", async () => {
+  const harness = createHarness({
+    sourceLanguage: "en-US",
+    enableInputTranscription: true,
+    echoTargetLanguage: false,
+  });
   await harness.provider.start();
   assert.deepEqual(harness.connects[0].config.inputAudioTranscription, {
     languageCodes: ["en-US"],
@@ -171,11 +178,24 @@ test("auto source forwards only the optional language hints selected by the user
   const harness = createHarness({
     sourceLanguage: "auto",
     sourceLanguageCandidates: ["en-US", "ja-JP", "en-us"],
+    enableInputTranscription: true,
   });
   await harness.provider.start();
   assert.deepEqual(harness.connects[0].config.inputAudioTranscription, {
     languageCodes: ["en-US", "ja-JP"],
   });
+  await harness.provider.stop();
+});
+
+test("fastest mode omits input transcription even when language hints exist", async () => {
+  const harness = createHarness({
+    sourceLanguage: "auto",
+    sourceLanguageCandidates: ["en-US", "ja-JP"],
+    enableInputTranscription: false,
+  });
+  await harness.provider.start();
+  assert.equal("inputAudioTranscription" in harness.connects[0].config, false);
+  assert.deepEqual(harness.connects[0].config.outputAudioTranscription, {});
   await harness.provider.stop();
 });
 
@@ -280,6 +300,7 @@ test("merges transcript fragments, detects input language, and debounces one fin
   assert.equal(harness.captions[1].sourceLanguageMode, "auto");
   assert.equal(harness.captions[1].provider, "gemini-live-translate");
   assert.equal(harness.captions[1].latencyMs, 100);
+  assert.equal(harness.captions[1].liveEdgeToPartialMs, 100);
   assert.equal(
     timers.timers.length,
     0,
@@ -297,6 +318,7 @@ test("merges transcript fragments, detects input language, and debounces one fin
   assert.equal(harness.captions.length, 3);
   assert.equal(harness.captions[2].isFinal, true);
   assert.equal(harness.captions[2].translation, "Chào buổi sáng");
+  assert.equal(harness.captions[2].partialToFinalMs, 50);
   assert.equal(harness.sessions[0].sent.length, 0, "partial audio below 100 ms is not uploaded");
   await harness.provider.stop();
 });
@@ -366,7 +388,7 @@ test("supports cumulative fragments and definitive finished boundaries without d
     serverContent: { outputTranscription: { text: "Bạn khỏe không?", finished: true } },
   });
   callbacks.onmessage({ serverContent: { turnComplete: true } });
-  timers.runLatest();
+  assert.equal(timers.timers.at(-1).cleared, true);
 
   assert.deepEqual(
     harness.captions.map(({ translation, isFinal }) => ({ translation, isFinal })),
@@ -389,6 +411,53 @@ test("supports cumulative fragments and definitive finished boundaries without d
   assert.equal(harness.captions.at(-1).latencyMs, null);
   assert.equal(harness.detections.at(-1).language, "ja");
   assert.equal(harness.detections.at(-1).updated, true);
+  await harness.provider.stop();
+});
+
+test("usage metadata is forwarded through a numeric allowlist only", async () => {
+  const harness = createHarness();
+  await harness.provider.start();
+
+  harness.connects[0].callbacks.onmessage({
+    usageMetadata: {
+      promptTokenCount: 100,
+      responseTokenCount: 25,
+      totalTokenCount: 125,
+      cachedContentTokenCount: 5,
+      thoughtsTokenCount: 3,
+      toolUsePromptTokenCount: 2,
+      promptTokensDetails: [{ modality: "AUDIO", tokenCount: 100 }],
+      transcript: "must-not-leak",
+      audio: "must-not-leak",
+    },
+  });
+
+  assert.deepEqual(harness.usages, [{
+    promptTokenCount: 100,
+    responseTokenCount: 25,
+    totalTokenCount: 125,
+    cachedContentTokenCount: 5,
+    thoughtsTokenCount: 3,
+    toolUsePromptTokenCount: 2,
+  }]);
+  assert.doesNotMatch(JSON.stringify(harness.usages), /must-not-leak|transcript|audio/i);
+  await harness.provider.stop();
+});
+
+test("Free Tier quota exhaustion becomes terminal without reconnecting or fallback", async () => {
+  const harness = createHarness();
+  await harness.provider.start();
+  const error = Object.assign(new Error("RESOURCE_EXHAUSTED: quota exceeded"), { code: 429 });
+
+  harness.connects[0].callbacks.onerror({ error });
+
+  assert.equal(harness.errors.length, 1);
+  assert.equal(harness.terminals.length, 1);
+  assert.equal(harness.provider.state, "failed");
+  assert.equal(harness.connects.length, 1);
+  assert.equal(harness.terminals[0].code, "GEMINI_FREE_TIER_QUOTA");
+  assert.match(harness.terminals[0].message, /Free Tier|AI Studio/i);
+  assert.match(harness.terminals[0].message, /không tự động chuyển/i);
   await harness.provider.stop();
 });
 

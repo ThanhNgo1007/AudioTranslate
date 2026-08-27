@@ -3,6 +3,7 @@ export type ProviderId = "demo" | "gemini";
 export type SessionState = "idle" | "connecting" | "listening" | "paused" | "stopping" | "error";
 export type OverlayPreset = "cinema" | "accessible" | "compact";
 export type OverlayPosition = "top" | "center" | "bottom";
+export type TranslationMode = "fastest" | "balanced" | "accurate";
 
 export interface GeminiState {
   active: ProviderId;
@@ -43,6 +44,16 @@ export interface LanguageState {
   detectionMs?: number | null;
 }
 
+export interface TranslationSettings {
+  mode: TranslationMode;
+  transcriptionModel: string;
+  textModel: string;
+  contextTurns: number;
+  partialThrottleMs: number;
+  glossary: string;
+  characterContext: string;
+}
+
 export interface OverlaySettings {
   preset: OverlayPreset;
   fontSize: number;
@@ -77,6 +88,35 @@ export interface AudioTelemetry {
   updatedAt: number;
 }
 
+export type RuntimeMetricName =
+  | "providerPrepareMs"
+  | "localQueueMs"
+  | "liveEdgeToPartialMs"
+  | "partialToFinalMs"
+  | "resultToRafMs"
+  | "firstReadableMs";
+
+export interface RuntimeMetricSummary {
+  latest: number | null;
+  p50: number | null;
+  p95: number | null;
+  count: number;
+}
+
+export interface RuntimeUsage {
+  promptTokenCount?: number;
+  responseTokenCount?: number;
+  totalTokenCount?: number;
+  cachedContentTokenCount?: number;
+  thoughtsTokenCount?: number;
+  toolUsePromptTokenCount?: number;
+}
+
+export interface RuntimeDiagnostics {
+  metrics: Record<RuntimeMetricName, RuntimeMetricSummary>;
+  usage: RuntimeUsage;
+}
+
 export interface SessionStatus {
   state: SessionState;
   active?: boolean;
@@ -87,6 +127,7 @@ export interface SessionStatus {
   canPause?: boolean;
   canResume?: boolean;
   canStop?: boolean;
+  diagnostics?: RuntimeDiagnostics | null;
 }
 
 export interface ControlCenterSnapshot {
@@ -94,6 +135,7 @@ export interface ControlCenterSnapshot {
   pairing: PairingState;
   source: AudioSourceState;
   languages: LanguageState;
+  translation: TranslationSettings;
   privacy: PrivacySettings;
   overlay: OverlaySettings;
   displays: DisplayOption[];
@@ -146,6 +188,7 @@ export interface ControlCenterAPI {
   connectBrowserTab(): Promise<ControlCenterSnapshot>;
   pickAudioFile(): Promise<ControlCenterSnapshot>;
   updateLanguages(payload: LanguageState): Promise<ControlCenterSnapshot>;
+  updateTranslation(payload: Partial<TranslationSettings>): Promise<ControlCenterSnapshot>;
   updatePrivacy(payload: Partial<PrivacySettings>): Promise<ControlCenterSnapshot>;
   updateOverlay(payload: Partial<OverlaySettings>): Promise<ControlCenterSnapshot>;
   startSession(): Promise<ControlCenterSnapshot>;

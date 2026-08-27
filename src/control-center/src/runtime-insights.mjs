@@ -28,6 +28,62 @@ function integerCounter(value) {
   return Math.floor(clamp(finiteNumber(value), 0, Number.MAX_SAFE_INTEGER));
 }
 
+const RUNTIME_METRIC_FIELDS = [
+  "providerPrepareMs",
+  "localQueueMs",
+  "liveEdgeToPartialMs",
+  "partialToFinalMs",
+  "resultToRafMs",
+  "firstReadableMs",
+];
+
+const USAGE_COUNTER_FIELDS = [
+  "promptTokenCount",
+  "responseTokenCount",
+  "totalTokenCount",
+  "cachedContentTokenCount",
+  "thoughtsTokenCount",
+  "toolUsePromptTokenCount",
+];
+
+function recordOf(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function optionalCounter(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.round(Math.min(Number.MAX_SAFE_INTEGER, value))
+    : null;
+}
+
+function normalizeMetricSummary(value) {
+  const summary = recordOf(value);
+  const count = optionalCounter(summary.count) ?? 0;
+  if (count === 0) return { latest: null, p50: null, p95: null, count: 0 };
+  return {
+    latest: optionalCounter(summary.latest),
+    p50: optionalCounter(summary.p50),
+    p95: optionalCounter(summary.p95),
+    count,
+  };
+}
+
+export function normalizeRuntimeDiagnostics(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = recordOf(value);
+  const rawMetrics = recordOf(raw.metrics);
+  const rawUsage = recordOf(raw.usage);
+  const metrics = Object.fromEntries(
+    RUNTIME_METRIC_FIELDS.map((field) => [field, normalizeMetricSummary(rawMetrics[field])]),
+  );
+  const usage = {};
+  for (const field of USAGE_COUNTER_FIELDS) {
+    const counter = optionalCounter(rawUsage[field]);
+    if (counter !== null) usage[field] = counter;
+  }
+  return { metrics, usage };
+}
+
 export function normalizeAudioTelemetry(value = {}) {
   const record = value && typeof value === "object" ? value : {};
   return {
