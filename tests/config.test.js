@@ -7,7 +7,6 @@ const {
   toLanguageList,
   toMaxCloudMinutes,
   toPort,
-  toTranslationMode,
 } = require("../src/config");
 
 test("parseArgs supports space, equals and boolean forms", () => {
@@ -100,25 +99,13 @@ test("provider-specific candidate defaults do not silently constrain Gemini auto
   ]);
 });
 
-test("CLI config exposes explicit Gemini translation profiles and model overrides", () => {
+test("Gemini config ignores removed contextual model environment variables", () => {
   const config = getConfig(["--provider", "gemini", "--translation-mode", "accurate"], {
     GEMINI_API_KEY: "private-key",
     GEMINI_TRANSCRIBE_MODEL: "gemini-transcribe-test",
     GEMINI_TEXT_MODEL: "gemini-flash-lite-test",
   });
-  assert.equal(config.geminiTranslationMode, "accurate");
-  assert.equal(config.geminiTranscriptionModel, "gemini-transcribe-test");
-  assert.equal(config.geminiTextModel, "gemini-flash-lite-test");
-  assert.equal(toTranslationMode("BALANCED"), "balanced");
-  assert.throws(() => toTranslationMode("turbo"), /translation mode/i);
-});
-
-test("legacy CLI Gemini sessions remain on fastest unless contextual mode is explicit", () => {
-  assert.equal(getConfig(["--provider", "gemini"], {}).geminiTranslationMode, "fastest");
-  assert.equal(
-    getConfig(["--provider", "gemini"], {
-      AUDIOTRANSLATE_TRANSLATION_MODE: "balanced",
-    }).geminiTranslationMode,
-    "balanced",
-  );
+  assert.equal(Object.hasOwn(config, "geminiTranslationMode"), false);
+  assert.equal(Object.hasOwn(config, "geminiTranscriptionModel"), false);
+  assert.equal(Object.hasOwn(config, "geminiTextModel"), false);
 });

@@ -6,62 +6,37 @@ const test = require("node:test");
 
 const { SettingsStore, sanitizeSettings } = require("../src/settings-store");
 
-test("fresh settings recommend contextual translation without changing caption display", () => {
+test("fresh settings use direct Gemini Live Translate without contextual settings", () => {
   const settings = sanitizeSettings({});
 
-  assert.equal(settings.version, 3);
+  assert.equal(settings.version, 4);
   assert.deepEqual(settings.captions, {
     mode: "fastest",
     echoTargetLanguage: false,
     resetGapMs: 1100,
     finalDebounceMs: 120,
   });
-  assert.deepEqual(settings.translation, {
-    mode: "balanced",
-    transcriptionModel: "gemini-3.5-transcribe-live",
-    textModel: "gemini-3.5-flash-lite",
-    contextTurns: 4,
-    partialThrottleMs: 450,
-    glossary: "",
-    characterContext: "",
-  });
+  assert.equal(settings.translation, undefined);
   assert.equal(settings.overlay.showSource, false);
 });
 
-test("version two settings keep the direct fastest route until the user opts in", () => {
-  const settings = sanitizeSettings({ version: 2, provider: "gemini" });
-
-  assert.equal(settings.version, 3);
-  assert.equal(settings.translation.mode, "fastest");
-  assert.equal(settings.translation.transcriptionModel, "gemini-3.5-transcribe-live");
-  assert.equal(settings.translation.textModel, "gemini-3.5-flash-lite");
-});
-
-test("contextual translation settings are bounded and unknown fields are stripped", () => {
+test("legacy contextual translation settings are removed during migration", () => {
   const settings = sanitizeSettings({
     version: 3,
     translation: {
-      mode: "cinematic-turbo",
-      transcriptionModel: "  bad\nmodel  ",
+      mode: "balanced",
+      transcriptionModel: "gemini-3.5-transcribe-live",
       textModel: "gemini-3.5-flash-lite",
-      contextTurns: 999,
-      partialThrottleMs: 1,
-      glossary: `  Hero = Anh hùng\r\n${"g".repeat(5_000)}`,
-      characterContext: `  Alex is Sam's older sister.\u0000${"c".repeat(5_000)}`,
+      contextTurns: 6,
+      partialThrottleMs: 250,
+      glossary: "Hero = Anh hùng",
+      characterContext: "Alex is Sam's older sister.",
       secret: "must-not-survive",
     },
   });
 
-  assert.equal(settings.translation.mode, "balanced");
-  assert.equal(settings.translation.transcriptionModel, "gemini-3.5-transcribe-live");
-  assert.equal(settings.translation.textModel, "gemini-3.5-flash-lite");
-  assert.equal(settings.translation.contextTurns, 6);
-  assert.equal(settings.translation.partialThrottleMs, 250);
-  assert.equal(settings.translation.glossary.length, 4_000);
-  assert.match(settings.translation.glossary, /^Hero = Anh hùng\n/);
-  assert.equal(settings.translation.characterContext.length, 4_000);
-  assert.doesNotMatch(settings.translation.characterContext, /\u0000/);
-  assert.equal(settings.translation.secret, undefined);
+  assert.equal(settings.version, 4);
+  assert.equal(Object.hasOwn(settings, "translation"), false);
 });
 
 test("legacy source-caption settings migrate without overriding an explicit profile", () => {

@@ -64,30 +64,26 @@ test("saved multi-display selection is exposed safely and triggers real overlay 
   assert.match(source, /Object\.hasOwn\(patch\.overlay, "displayId"\)/);
 });
 
-test("desktop wiring delegates caption profile config and accepts Control Center caption patches", () => {
+test("desktop wiring delegates caption config and ignores removed contextual patches", () => {
   const configBody = functionBody("configFromSettings", "enqueueRuntime");
   assert.match(configBody, /configFromDesktopSettings/);
 
   const patchBody = functionBody("normalizeControlPatch", "assertControlSender");
   assert.match(patchBody, /isPlainRecord\(patch\.captions\)/);
   assert.match(patchBody, /next\.captions\s*=\s*patch\.captions/);
-  assert.match(patchBody, /isPlainRecord\(patch\.translation\)/);
-  assert.match(patchBody, /next\.translation\s*=\s*patch\.translation/);
+  assert.doesNotMatch(patchBody, /patch\.translation/);
 });
 
-test("desktop startup reports whether Gemini uses direct or contextual translation", () => {
+test("desktop startup reports direct Gemini Live Translate only", () => {
   const body = functionBody("startRuntime", "stopRuntime");
-  assert.match(body, /settings\.translation\.mode/);
   assert.match(body, /Live Translate/);
-  assert.match(body, /Live Transcribe/);
+  assert.doesNotMatch(body, /settings\.translation|Live Transcribe|Flash-Lite/);
 });
 
-test("provider snapshot reports the selected direct model or contextual model route", () => {
+test("provider snapshot reports only the direct Live Translate model", () => {
   const body = functionBody("controlSnapshot", "publishSnapshot");
-  assert.match(body, /settings\?\.translation\?\.mode/);
-  assert.match(body, /transcriptionModel/);
-  assert.match(body, /textModel/);
   assert.match(body, /geminiModel/);
+  assert.doesNotMatch(body, /translationMode|transcriptionModel|textModel|Flash-Lite/);
 });
 
 test("desktop aggregates gateway, usage and renderer timing without caption payloads", () => {

@@ -31,7 +31,6 @@ function configFromDesktopSettings(cliConfig = {}, settings = {}, secrets = {}) 
   const source = settings?.source || {};
   const cloud = settings?.cloud || {};
   const captions = settings?.captions || {};
-  const translation = settings?.translation || {};
   const overlay = settings?.overlay || {};
   return {
     ...cliConfig,
@@ -48,14 +47,6 @@ function configFromDesktopSettings(cliConfig = {}, settings = {}, secrets = {}) 
     geminiEchoTargetLanguage: captions.echoTargetLanguage === true,
     geminiFinalDebounceMs: captions.finalDebounceMs,
     captionResetGapMs: captions.resetGapMs,
-    geminiTranslationMode: translation.mode || cliConfig.geminiTranslationMode || "balanced",
-    geminiTranscriptionModel:
-      translation.transcriptionModel || cliConfig.geminiTranscriptionModel,
-    geminiTextModel: translation.textModel || cliConfig.geminiTextModel,
-    geminiContextTurns: translation.contextTurns,
-    geminiPartialThrottleMs: translation.partialThrottleMs,
-    geminiGlossary: String(translation.glossary || ""),
-    geminiCharacterContext: String(translation.characterContext || ""),
   };
 }
 
@@ -200,7 +191,6 @@ function settingsPatchRequiresRuntimeStop(runtimeActive, patch = {}, currentSett
   if (patch.source && typeof patch.source === "object") return true;
   if (patch.languages && typeof patch.languages === "object") return true;
   if (patch.captions && typeof patch.captions === "object") return true;
-  if (patch.translation && typeof patch.translation === "object") return true;
   if (
     patch.overlay &&
     typeof patch.overlay === "object" &&

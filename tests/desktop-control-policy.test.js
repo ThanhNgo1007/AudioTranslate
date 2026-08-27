@@ -23,7 +23,7 @@ const {
   settingsPatchRequiresRuntimeStop,
 } = require("../src/desktop-control-policy");
 
-test("desktop settings produce explicit Gemini low-latency provider options", () => {
+test("desktop settings expose only direct Gemini Live Translate options", () => {
   const config = configFromDesktopSettings(
     { host: "127.0.0.1", geminiModel: "gemini-test" },
     {
@@ -62,13 +62,13 @@ test("desktop settings produce explicit Gemini low-latency provider options", ()
   assert.equal(config.showSource, false);
   assert.equal(config.authToken, "local-pairing");
   assert.equal(config.geminiApiKey, "cloud-secret");
-  assert.equal(config.geminiTranslationMode, "balanced");
-  assert.equal(config.geminiTranscriptionModel, "gemini-transcribe-test");
-  assert.equal(config.geminiTextModel, "gemini-flash-lite-test");
-  assert.equal(config.geminiContextTurns, 5);
-  assert.equal(config.geminiPartialThrottleMs, 600);
-  assert.equal(config.geminiGlossary, "council = hội đồng");
-  assert.equal(config.geminiCharacterContext, "Alex: older sister of Sam.");
+  assert.equal(Object.hasOwn(config, "geminiTranslationMode"), false);
+  assert.equal(Object.hasOwn(config, "geminiTranscriptionModel"), false);
+  assert.equal(Object.hasOwn(config, "geminiTextModel"), false);
+  assert.equal(Object.hasOwn(config, "geminiContextTurns"), false);
+  assert.equal(Object.hasOwn(config, "geminiPartialThrottleMs"), false);
+  assert.equal(Object.hasOwn(config, "geminiGlossary"), false);
+  assert.equal(Object.hasOwn(config, "geminiCharacterContext"), false);
   assert.equal(Object.hasOwn(config, "unknown"), false);
 });
 
@@ -183,7 +183,7 @@ test("active runtime stops before source, language, or consent changes become vi
       { translation: { mode: "accurate" } },
       { translation: { mode: "balanced" } },
     ),
-    true,
+    false,
   );
   assert.equal(
     settingsPatchRequiresRuntimeStop(

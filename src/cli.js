@@ -18,7 +18,6 @@ const START_VALUE_OPTIONS = new Map([
   ["target", "string"],
   ["port", "integer"],
   ["max-cloud-minutes", "integer"],
-  ["translation-mode", "string"],
 ]);
 const START_FLAG_OPTIONS = new Set([
   "headless",
@@ -131,7 +130,6 @@ Tùy chọn chỉ dành cho start --headless:
   --show-source true|false
   --click-through true|false
   --max-cloud-minutes 30
-  --translation-mode fastest|balanced|accurate
 
 Desktop: cài API key, nguồn audio, ngôn ngữ và overlay trong Control Center.
 CLI desktop không ghi .env và không nhận API key qua tham số.
@@ -185,7 +183,6 @@ function configurationSummary(config, envPath) {
     showSource: config.showSource,
     clickThrough: config.clickThrough,
     maxCloudMinutes: config.maxCloudMinutes,
-    translationMode: config.geminiTranslationMode || "fastest",
     pairingToken: isValidPairingToken(config.authToken) ? "configured" : "missing",
     azureCredentials:
       isValidCloudCredential(config.azureSpeechKey) &&

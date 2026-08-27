@@ -9,7 +9,6 @@ import type {
   PrivacySettings,
   ProviderId,
   SourceSelection,
-  TranslationSettings,
 } from "./types";
 import { finishFileSessionWithFreshSnapshot } from "./file-session-result.mjs";
 import { stopOwnedFileStreamer } from "./file-streamer-lifecycle.mjs";
@@ -18,7 +17,6 @@ import { normalizeOverlaySettings } from "./overlay-snapshot.mjs";
 import { rendererOwnedSourceLabel } from "./source-display.mjs";
 import { normalizeAudioTelemetry } from "./runtime-insights.mjs";
 import { normalizeDiagnosticsReport } from "./diagnostics-display.mjs";
-import { normalizeTranslationSettings } from "./translation-profile.mjs";
 
 interface FileSourceMeta {
   displayName: string;
@@ -139,7 +137,6 @@ function normalizeSnapshot(rawValue: unknown): ControlCenterSnapshot {
   const providerState = typeof raw.provider === "object" ? recordOf(raw.provider) : recordOf(raw.providerState);
   const runtime = recordOf(raw.runtime || raw.session);
   const overlay = recordOf(settings.overlay || raw.overlay);
-  const translation = normalizeTranslationSettings(settings.translation || raw.translation);
   const nativeKind = String(rawSource.kind || sourceSettings.kind || "tab");
   const sourceKind = nativeKind === "file" ? "file" : "browser-tab";
   const fileSelected = sourceKind === "file" && selectedFile !== null;
@@ -201,7 +198,6 @@ function normalizeSnapshot(rawValue: unknown): ControlCenterSnapshot {
       detected: typeof runtime.detectedLanguage === "string" ? runtime.detectedLanguage : null,
       detectionMs: typeof runtime.languageDetectionMs === "number" ? runtime.languageDetectionMs : null,
     },
-    translation,
     privacy: {
       cloudConsent: recordOf(raw.privacy).cloudConsent === true || recordOf(settings.cloud).consent === "gemini:audio:v1",
       maxCloudMinutes: Math.round(numberOr(recordOf(raw.privacy).maxCloudMinutes, numberOr(recordOf(settings.cloud).maxMinutes, 30))),
@@ -500,10 +496,6 @@ function createNativeClient(nativeClient: NativeControlCenterAPI): ControlCenter
         source: { language: languages.source, targetLanguage: languages.target },
       }));
     },
-    updateTranslation: async (translation) => {
-      await stopActiveFileStreamer();
-      return withLatestSnapshot(() => nativeClient.updateSettings({ translation }));
-    },
     updatePrivacy: async (privacy) => {
       await stopActiveFileStreamer();
       return withLatestSnapshot(() => nativeClient.updateSettings({
@@ -602,7 +594,6 @@ const defaultSnapshot: ControlCenterSnapshot = {
     detected: null,
     detectionMs: null,
   },
-  translation: normalizeTranslationSettings(),
   privacy: { cloudConsent: false, maxCloudMinutes: 30 },
   overlay: {
     preset: "cinema",
@@ -730,13 +721,6 @@ function createMockClient(): ControlCenterClient {
     },
     async updateLanguages(languages: LanguageState) {
       snapshot.languages = languages;
-      return publish();
-    },
-    async updateTranslation(translation: Partial<TranslationSettings>) {
-      snapshot.translation = normalizeTranslationSettings({
-        ...snapshot.translation,
-        ...translation,
-      });
       return publish();
     },
     async updatePrivacy(privacy: Partial<PrivacySettings>) {
@@ -876,7 +860,6 @@ function createUnavailableClient(): ControlCenterClient {
     connectBrowserTab: reject,
     pickAudioFile: reject,
     updateLanguages: reject,
-    updateTranslation: reject,
     updatePrivacy: reject,
     updateOverlay: reject,
     startSession: reject,

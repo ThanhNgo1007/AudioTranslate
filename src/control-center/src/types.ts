@@ -3,7 +3,6 @@ export type ProviderId = "demo" | "gemini";
 export type SessionState = "idle" | "connecting" | "listening" | "paused" | "stopping" | "error";
 export type OverlayPreset = "cinema" | "accessible" | "compact";
 export type OverlayPosition = "top" | "center" | "bottom";
-export type TranslationMode = "fastest" | "balanced" | "accurate";
 
 export interface GeminiState {
   active: ProviderId;
@@ -42,16 +41,6 @@ export interface LanguageState {
   target: string;
   detected?: string | null;
   detectionMs?: number | null;
-}
-
-export interface TranslationSettings {
-  mode: TranslationMode;
-  transcriptionModel: string;
-  textModel: string;
-  contextTurns: number;
-  partialThrottleMs: number;
-  glossary: string;
-  characterContext: string;
 }
 
 export interface OverlaySettings {
@@ -135,7 +124,6 @@ export interface ControlCenterSnapshot {
   pairing: PairingState;
   source: AudioSourceState;
   languages: LanguageState;
-  translation: TranslationSettings;
   privacy: PrivacySettings;
   overlay: OverlaySettings;
   displays: DisplayOption[];
@@ -188,7 +176,6 @@ export interface ControlCenterAPI {
   connectBrowserTab(): Promise<ControlCenterSnapshot>;
   pickAudioFile(): Promise<ControlCenterSnapshot>;
   updateLanguages(payload: LanguageState): Promise<ControlCenterSnapshot>;
-  updateTranslation(payload: Partial<TranslationSettings>): Promise<ControlCenterSnapshot>;
   updatePrivacy(payload: Partial<PrivacySettings>): Promise<ControlCenterSnapshot>;
   updateOverlay(payload: Partial<OverlaySettings>): Promise<ControlCenterSnapshot>;
   startSession(): Promise<ControlCenterSnapshot>;

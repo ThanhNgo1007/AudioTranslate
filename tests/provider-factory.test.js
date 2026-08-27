@@ -56,7 +56,7 @@ test("Gemini provider requires its own selected-audio consent", () => {
   assert.equal(privacyMode.enableSessionResumption, false);
 });
 
-test("Gemini factory forwards the selected caption profile instead of forcing bilingual mode", () => {
+test("Gemini factory forwards the selected caption display mode instead of forcing bilingual mode", () => {
   const fastest = createProvider(
     {
       provider: "gemini",
@@ -90,7 +90,7 @@ test("Gemini factory forwards the selected caption profile instead of forcing bi
   assert.equal(bilingual.finalDebounceMs, 240);
 });
 
-test("Gemini factory keeps direct Live Translate for fastest and routes contextual modes", () => {
+test("Gemini factory always uses direct Live Translate and ignores removed contextual settings", () => {
   const commonConfig = {
     provider: "gemini",
     geminiApiKey: "key",
@@ -102,14 +102,7 @@ test("Gemini factory keeps direct Live Translate for fastest and routes contextu
     targetLanguage: "vi",
   };
 
-  const fastest = createProvider(
-    { ...commonConfig, geminiTranslationMode: "fastest" },
-    session,
-    {},
-  );
-  assert.equal(fastest.constructor.name, "GeminiLiveTranslateTranslator");
-
-  const balanced = createProvider(
+  const provider = createProvider(
     {
       ...commonConfig,
       geminiTranslationMode: "balanced",
@@ -123,20 +116,7 @@ test("Gemini factory keeps direct Live Translate for fastest and routes contextu
     session,
     {},
   );
-  assert.equal(balanced.constructor.name, "GeminiContextualTranslator");
-  assert.equal(balanced.mode, "balanced");
-  assert.equal(balanced.transcriptionModel, "transcribe-test");
-  assert.equal(balanced.textModel, "flash-lite-test");
-  assert.equal(balanced.contextTurns, 5);
-  assert.equal(balanced.partialThrottleMs, 600);
-  assert.equal(balanced.glossary, "council = hội đồng");
-  assert.equal(balanced.characterContext, "Alex: older sister of Sam.");
-
-  const accurate = createProvider(
-    { ...commonConfig, geminiTranslationMode: "accurate" },
-    session,
-    {},
-  );
-  assert.equal(accurate.constructor.name, "GeminiContextualTranslator");
-  assert.equal(accurate.mode, "accurate");
+  assert.equal(provider.constructor.name, "GeminiLiveTranslateTranslator");
+  assert.equal(Object.hasOwn(provider, "textModel"), false);
+  assert.equal(Object.hasOwn(provider, "transcriptionModel"), false);
 });

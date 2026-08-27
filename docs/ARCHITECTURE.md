@@ -1,6 +1,6 @@
 # Kiến trúc AudioTranslate Live
 
-Cập nhật: 2026-08-27.
+Cập nhật: 2026-08-28.
 
 ## Luồng dữ liệu
 
@@ -14,10 +14,7 @@ Control Center file picker + Web Audio decode/worklet ─ 100 ms ────┤
                               RealtimeGateway @ 127.0.0.1
                                 mutual HMAC + bounded queues
                                            ↓
-                      TranslationProvider ─┬─ GeminiLiveTranslator (fastest)
-                                           ├─ GeminiContextualTranslator
-                                           │    ├─ GeminiLiveTranscriber
-                                           │    └─ GeminiContextualTextTranslator
+                      TranslationProvider ─┬─ GeminiLiveTranslator
                                            ├─ AzureSpeechTranslator (tùy chọn)
                                            └─ DemoTranslator
                                            ↓
@@ -94,14 +91,12 @@ Extension chỉ kiểm hình dạng chung và tối đa 8; gateway đọc `provi
 - Heartbeat 15 giây kết thúc half-open socket; tối đa 4 local client và 10 lần start/phút/client.
 - Provider startup/stop/close có timeout; lỗi terminal đóng capture để không tiếp tục đẩy audio vào queue chết.
 - Gemini direct đóng gói input thành PCM16 16 kHz/100 ms theo contract Live Translate, giới hạn fragment/context và chỉ render output transcription. Session resumption mặc định tắt để ưu tiên riêng tư.
-- Contextual route giữ Live Transcribe WebSocket mở, xoay chủ động trước giới hạn mười phút, dùng activity/silence của gateway để chốt utterance và đưa text sang Flash-Lite. `balanced` dịch partial đã đủ 8 ký tự đọc được, yêu cầu tăng ít nhất 12 ký tự và throttle 250–2000 ms; `accurate` chỉ dịch final.
-- Mọi MT job có generation + `AbortController`; partial mới thay thế partial cũ, final được ưu tiên và dịch lại toàn utterance. Chỉ tối đa 6 turn/12.000 ký tự context cùng hai field 4.000 ký tự được gửi. History nằm trong RAM và bị xóa khi stop.
 
 Các policy ưu tiên phụ đề hiện tại hơn transcript đầy đủ. History/SRT về sau cần recording path và consent riêng.
 
 ## Partial/final và overlay
 
-- Draft có thể thay đổi khi model nhận thêm ngữ cảnh; final được đánh dấu riêng. Direct provider tích lũy output transcription trong một lượt nói. Contextual provider hủy hypothesis MT cũ, chỉ emit khi delta tích lũy đủ một cụm đọc được hoặc gặp dấu câu, rồi emit đúng một final từ toàn utterance.
+- Draft có thể thay đổi khi model nhận thêm audio; final được đánh dấu riêng. Gemini Live Translate tích lũy output transcription trong một lượt nói rồi phát đúng một final tại ranh giới utterance.
 - Caption sequence cũ hoặc khác session bị bỏ.
 - Live overlay clamp 1–2 dòng và dựng một cửa sổ rolling theo grapheme/ngữ nghĩa: nội dung mới nối tiếp trong cùng lượt nói, phần cũ cuộn ra khi vượt sức chứa và final không phát lại từ đầu. Partial hủy timer ẩn; chỉ final mới bắt đầu auto-hide. Chỉ final caption đi vào `aria-live` để tránh screen reader đọc lại mọi partial.
 - Preferences gồm preset/vị trí normalized theo display, lock/click-through, font, line-height, opacity, max width/lines, high contrast và auto-hide.

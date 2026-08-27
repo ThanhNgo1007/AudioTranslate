@@ -90,7 +90,7 @@ Headless không có Control Center và không đọc Gemini key từ desktop `sa
 npm run headless
 ```
 
-Tối thiểu, Gemini headless cần provider, Gemini API key, cloud consent và pairing secret mạnh. Source/target, candidate hints và guardrail có thể nằm trong environment. Profile dịch dùng `AUDIOTRANSLATE_TRANSLATION_MODE=fastest|balanced|accurate`; có thể ghi đè bằng `--translation-mode` nhưng chỉ với `start --headless`. [`.env.example`](../.env.example) cũng liệt kê các biến ghi đè model Transcribe/Text dành cho thử nghiệm. Các cờ không nhạy cảm tương ứng chỉ được chấp nhận cho `start --headless`; CLI fail-closed khi thiếu cấu hình bắt buộc và không hỏi secret tương tác trong pipe/CI.
+Tối thiểu, Gemini headless cần provider, Gemini API key, cloud consent và pairing secret mạnh. Source/target, candidate hints và guardrail có thể nằm trong environment. Headless dùng Live Translate trực tiếp; [`.env.example`](../.env.example) chỉ giữ `GEMINI_LIVE_MODEL` làm model override thử nghiệm. `--translation-mode` và các model Transcribe/Text đã bị loại bỏ. Các cờ không nhạy cảm tương ứng chỉ được chấp nhận cho `start --headless`; CLI fail-closed khi thiếu cấu hình bắt buộc và không hỏi secret tương tác trong pipe/CI.
 
 ## Cập nhật hoặc xóa key
 

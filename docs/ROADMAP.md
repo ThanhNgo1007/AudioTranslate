@@ -1,12 +1,11 @@
 # Kế hoạch phát triển AudioTranslate
 
-Cập nhật: 2026-08-27. Tài liệu này chỉ liệt kê những hạng mục **chưa hoàn thiện** hoặc mới ở mức prototype. Những mục đã chạy được được ghi riêng để tránh người dùng hiểu nhầm là tính năng sẵn sàng.
+Cập nhật: 2026-08-28. Tài liệu này chỉ liệt kê những hạng mục **chưa hoàn thiện** hoặc mới ở mức prototype. Những mục đã chạy được được ghi riêng để tránh người dùng hiểu nhầm là tính năng sẵn sàng.
 
 ## Nền tảng đã có
 
 - Control Center React/TypeScript là giao diện chính; CLI chỉ dùng để mở app, preview, doctor và headless.
-- Gemini có ba profile: Live Translate trực tiếp, Live Transcribe → Flash-Lite có partial, và final-only ưu tiên chính xác. Demo chạy hoàn toàn local; Azure chỉ dành cho headless/nâng cao.
-- Contextual route đã có generation cancellation, phrase buffering, final retranslation, RAM-only history tối đa 6 turn, glossary và ghi chú nhân vật với policy không suy đoán giới tính.
+- Gemini dùng duy nhất Live Translate trực tiếp cho tab/file. Pipeline contextual hai tầng đã được gỡ vì quota riêng trên Free Tier và độ trễ bổ sung. Demo chạy hoàn toàn local; Azure chỉ dành cho headless/nâng cao.
 - Tự nhận diện ngôn ngữ nguồn, thời gian khóa ngôn ngữ, độ trễ caption, RMS/peak, speech/silence, queue, packet gap và dropped frame đã được đưa lên Control Center.
 - Pause/resume giữ phiên capture nhưng chặn và xóa audio đang chờ trước provider; stop/error đóng phiên và xóa queue.
 - Diagnostics trong app kiểm provider, key/consent, extension/pairing, privacy, runtime và cổng local mà không trả secret hoặc raw audio.
