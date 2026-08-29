@@ -170,8 +170,8 @@ Control Center cho chọn màn hình, vị trí/preset, cỡ và độ đậm ch
 
 - Gateway chỉ nghe ở `127.0.0.1`; extension chỉ chấp nhận `ws://127.0.0.1:<port>`.
 - Manifest có key ổn định; `.env.example` ghim extension ID `docfjemeacdakckkamiiopljhmgjgfgl`. Bản build/ký bằng key khác phải cập nhật allowlist.
-- Mã ghép nối chỉ lưu trong `chrome.storage.session`. Hai phía chứng minh cùng biết secret bằng nonce + HMAC-SHA-256; secret không được gửi như bearer token qua WebSocket.
-- Không gửi PCM trước ACK `started`; pre-roll/backpressure đều có giới hạn và frame cũ bị bỏ để tránh backlog âm thầm.
+- Mã ghép nối chỉ lưu trong `chrome.storage.session`. Hai phía chứng minh cùng biết secret bằng nonce + HMAC-SHA-256; secret không được gửi như bearer token qua WebSocket. Bản sao trong clipboard tự hết hạn sau 60 giây và chỉ bị xóa nếu người dùng chưa sao chép nội dung khác.
+- Không gửi PCM trước ACK `started`; pre-roll/backpressure đều có giới hạn. Khi Gemini reconnect, app chỉ giữ phần audio còn trong cửa sổ realtime một giây, ghi đè phần cũ trong RAM và không phát lại backlog thành phụ đề trễ.
 - Gemini key không đi vào extension hay local WebSocket. Chuỗi người dùng đang nhập tồn tại tạm trong ô key của Control Center; sau khi IPC lưu, app không trả secret về renderer. [`safeStorage`](https://www.electronjs.org/docs/latest/api/safe-storage) mã hóa bằng backend hệ điều hành khi khả dụng; nếu Linux chỉ có backend `basic_text`, app giữ key trong phiên thay vì lưu plaintext.
 - Electron bật sandbox, context isolation, tắt Node integration và chỉ expose IPC được allowlist.
 - Không log Authorization/audio/transcript theo mặc định và không ghi audio/transcript xuống đĩa trong live path.

@@ -545,9 +545,11 @@ test("bounds cloud transcript fragments in memory while retaining recent subtitl
 });
 
 test("uses a private resumption handle on GoAway and buffers audio until reconnect", async () => {
+  const now = 1_000;
   const secondConnect = deferred();
   const sessions = [];
   const harness = createHarness({
+    now: () => now,
     connectImpl(_params, index) {
       const session = {
         sent: [],
@@ -579,7 +581,10 @@ test("uses a private resumption handle on GoAway and buffers audio until reconne
   assert.doesNotMatch(JSON.stringify(harness.provider), /private-resume-handle/);
 
   for (let index = 0; index < 5; index += 1) {
-    assert.equal(harness.provider.write(Buffer.alloc(640, 7), { capturedAt: index * 20 }), true);
+    assert.equal(
+      harness.provider.write(Buffer.alloc(640, 7), { capturedAt: now - 80 + index * 20 }),
+      true,
+    );
   }
   assert.equal(sessions[0].sent.length, 0);
   secondConnect.resolve(sessions[1]);
@@ -589,6 +594,192 @@ test("uses a private resumption handle on GoAway and buffers audio until reconne
   assert.equal(sessions[1].sent.length, 1);
   assert.equal(Buffer.from(sessions[1].sent[0].audio.data, "base64").byteLength, 3200);
   assert.equal(harness.terminals.length, 0);
+  await harness.provider.stop();
+});
+
+test("drops only stale reconnect audio instead of replaying a delayed backlog", async () => {
+  const now = 10_000;
+  let monotonicNow = 8_000;
+  const secondConnect = deferred();
+  const sessions = [];
+  const harness = createHarness({
+    now: () => now,
+    monotonicNow: () => monotonicNow,
+    connectImpl(_params, index) {
+      const session = {
+        sent: [],
+        sendRealtimeInput(message) {
+          this.sent.push(message);
+        },
+        close() {},
+      };
+      sessions.push(session);
+      return index === 0 ? session : secondConnect.promise;
+    },
+  });
+  await harness.provider.start();
+  harness.connects[0].callbacks.onmessage({
+    sessionResumptionUpdate: { resumable: true, newHandle: "private-resume-handle" },
+    goAway: { timeLeft: "5s" },
+  });
+  const reconnecting = harness.provider.reconnectPromise;
+  await waitFor(() => harness.connects.length === 2, "resumed Gemini connection");
+
+  for (let index = 0; index < 5; index += 1) {
+    monotonicNow = 8_000 + index * 20;
+    harness.provider.write(Buffer.alloc(640, 3), { capturedAt: 8_000 + index * 20 });
+  }
+  for (let index = 0; index < 5; index += 1) {
+    monotonicNow = 9_500 + index * 20;
+    harness.provider.write(Buffer.alloc(640, 9), { capturedAt: 9_500 + index * 20 });
+  }
+  const bufferedBeforeReconnect = harness.provider.pendingAudio;
+
+  monotonicNow = 10_000;
+  secondConnect.resolve(sessions[1]);
+  await reconnecting;
+
+  assert.equal(sessions[1].sent.length, 1);
+  const sentAudio = Buffer.from(sessions[1].sent[0].audio.data, "base64");
+  assert.equal(sentAudio.byteLength, 3_200);
+  assert.ok(sentAudio.every((byte) => byte === 9));
+  assert.ok(bufferedBeforeReconnect.every((byte) => byte === 0));
+  assert.ok(
+    harness.statuses.some(
+      (status) => status.level === "warning" && /audio cũ/i.test(status.message),
+    ),
+  );
+  assert.equal(harness.terminals.length, 0);
+  await harness.provider.stop();
+});
+
+test("keeps the newest realtime window when a reconnect outlives buffer capacity", async () => {
+  let monotonicNow = 20_000;
+  const secondConnect = deferred();
+  const sessions = [];
+  const harness = createHarness({
+    now: () => 50_000,
+    monotonicNow: () => monotonicNow,
+    connectImpl(_params, index) {
+      const session = {
+        sent: [],
+        sendRealtimeInput(message) {
+          this.sent.push(message);
+        },
+        close() {},
+      };
+      sessions.push(session);
+      return index === 0 ? session : secondConnect.promise;
+    },
+  });
+  await harness.provider.start();
+  harness.connects[0].callbacks.onmessage({
+    sessionResumptionUpdate: { resumable: true, newHandle: "private-resume-handle" },
+    goAway: { timeLeft: "5s" },
+  });
+  const reconnecting = harness.provider.reconnectPromise;
+  await waitFor(() => harness.connects.length === 2, "long Gemini reconnect");
+
+  const accepted = [];
+  for (let index = 0; index < 110; index += 1) {
+    monotonicNow = 20_000 + index * 20;
+    accepted.push(
+      harness.provider.write(Buffer.alloc(640, index < 60 ? 3 : 9), {
+        capturedAt: 50_000 + index * 20,
+      }),
+    );
+  }
+  secondConnect.resolve(sessions[1]);
+  await reconnecting;
+
+  assert.ok(accepted.every(Boolean), "newest reconnect frames must not be rejected by stale data");
+  assert.ok(sessions[1].sent.length > 0);
+  const newestChunk = Buffer.from(sessions[1].sent.at(-1).audio.data, "base64");
+  assert.ok(newestChunk.every((byte) => byte === 9));
+  assert.ok(harness.statuses.some((status) => /audio cũ/i.test(status.message)));
+  await harness.provider.stop();
+});
+
+test("expires reconnect audio by trusted receipt time instead of client timestamps", async () => {
+  let monotonicNow = 1_000;
+  const secondConnect = deferred();
+  const sessions = [];
+  const harness = createHarness({
+    now: () => 10_000,
+    monotonicNow: () => monotonicNow,
+    connectImpl(_params, index) {
+      const session = {
+        sent: [],
+        sendRealtimeInput(message) {
+          this.sent.push(message);
+        },
+        close() {},
+      };
+      sessions.push(session);
+      return index === 0 ? session : secondConnect.promise;
+    },
+  });
+  await harness.provider.start();
+  harness.connects[0].callbacks.onmessage({
+    sessionResumptionUpdate: { resumable: true, newHandle: "private-resume-handle" },
+    goAway: { timeLeft: "5s" },
+  });
+  const reconnecting = harness.provider.reconnectPromise;
+  await waitFor(() => harness.connects.length === 2, "timestamp-safe Gemini reconnect");
+
+  for (let index = 0; index < 5; index += 1) {
+    harness.provider.write(Buffer.alloc(640, 3), { capturedAt: 999_999 + index });
+  }
+  monotonicNow = 2_500;
+  for (let index = 0; index < 5; index += 1) {
+    harness.provider.write(Buffer.alloc(640, 9), { capturedAt: index });
+  }
+  monotonicNow = 2_600;
+  secondConnect.resolve(sessions[1]);
+  await reconnecting;
+
+  assert.equal(sessions[1].sent.length, 1);
+  const sentAudio = Buffer.from(sessions[1].sent[0].audio.data, "base64");
+  assert.ok(sentAudio.every((byte) => byte === 9));
+  await harness.provider.stop();
+});
+
+test("rejects an oversized reconnect frame without evicting the buffered live edge", async () => {
+  const secondConnect = deferred();
+  const sessions = [];
+  const harness = createHarness({
+    maxBufferedAudioBytes: 6_400,
+    monotonicNow: () => 1_000,
+    connectImpl(_params, index) {
+      const session = {
+        sent: [],
+        sendRealtimeInput(message) {
+          this.sent.push(message);
+        },
+        close() {},
+      };
+      sessions.push(session);
+      return index === 0 ? session : secondConnect.promise;
+    },
+  });
+  await harness.provider.start();
+  harness.connects[0].callbacks.onmessage({
+    sessionResumptionUpdate: { resumable: true, newHandle: "private-resume-handle" },
+    goAway: { timeLeft: "5s" },
+  });
+  const reconnecting = harness.provider.reconnectPromise;
+  await waitFor(() => harness.connects.length === 2, "oversized-frame Gemini reconnect");
+
+  for (let index = 0; index < 5; index += 1) {
+    assert.equal(harness.provider.write(Buffer.alloc(640, 9)), true);
+  }
+  assert.equal(harness.provider.write(Buffer.alloc(6_402, 7)), false);
+
+  secondConnect.resolve(sessions[1]);
+  await reconnecting;
+  assert.equal(sessions[1].sent.length, 1);
+  const sentAudio = Buffer.from(sessions[1].sent[0].audio.data, "base64");
+  assert.ok(sentAudio.every((byte) => byte === 9));
   await harness.provider.stop();
 });
 

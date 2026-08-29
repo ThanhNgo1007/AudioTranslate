@@ -37,6 +37,22 @@ test("OS before-quit routes active sessions through native confirmation", () => 
   assert.match(body, /requestQuitWithNativeConfirmation/);
 });
 
+test("pairing token copies use the expiring clipboard owner and clear during shutdown", () => {
+  assert.match(source, /new SensitiveClipboardManager\(\{ clipboard \}\)/);
+  assert.match(source, /function copyPairingTokenToClipboard\(\)[\s\S]*?sensitiveClipboard\.copy\(configuredPairingToken\(\)\)/);
+  assert.equal(
+    source.match(/click:\s*copyPairingTokenToClipboard/g)?.length,
+    1,
+    "tray copy must use the expiring clipboard helper",
+  );
+  assert.match(
+    source,
+    /ipcMain\.handle\("control:copy-pairing-token",[\s\S]*?copyPairingTokenToClipboard\(\)/,
+  );
+  const beforeQuit = source.slice(source.indexOf('app.on("before-quit"'));
+  assert.match(beforeQuit, /sensitiveClipboard\.dispose\(\)/);
+});
+
 test("terminal provider status disarms and closes the desktop gateway", () => {
   const body = functionBody("replaceGateway", "startRuntime");
   assert.match(body, /status\.terminal\s*===\s*true/);

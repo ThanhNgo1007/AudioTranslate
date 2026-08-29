@@ -24,6 +24,7 @@ const { RollingRuntimeMetrics, RUNTIME_METRIC_FIELDS } = require("./runtime-metr
 const { listDisplayOptions, resolveOverlayDisplay } = require("./overlay-display");
 const { createProvider } = require("./provider-factory");
 const { SecretStore, resolveSecret, resolveSecretStatus } = require("./secret-store");
+const { SensitiveClipboardManager } = require("./sensitive-clipboard");
 const { SettingsStore } = require("./settings-store");
 const { DEMO_LINES } = require("./providers/demo");
 const {
@@ -71,6 +72,7 @@ let selectedFileReady = false;
 let runtimeState = { state: "idle", active: false, message: "Sẵn sàng thiết lập", latencyMs: null };
 const runtimeSignals = new DesktopRuntimeSignals();
 const runtimeMetrics = new RollingRuntimeMetrics({ maxSamples: 120 });
+const sensitiveClipboard = new SensitiveClipboardManager({ clipboard });
 let runtimeGeneration = 0;
 let lastStatus = { type: "status", level: "idle", message: "Đang khởi động AudioTranslate…" };
 let previewTimer = null;
@@ -430,7 +432,7 @@ function rebuildTrayMenu() {
       { label: "Đưa phụ đề về vị trí mặc định", click: resetOverlay },
       {
         label: "Sao chép mã ghép nối extension",
-        click: () => clipboard.writeText(configuredPairingToken()),
+        click: copyPairingTokenToClipboard,
       },
       { type: "separator" },
       { label: lastStatus.message, enabled: false },
@@ -528,6 +530,10 @@ function configuredGeminiApiKey() {
 
 function configuredPairingToken() {
   return pairingToken;
+}
+
+function copyPairingTokenToClipboard() {
+  return sensitiveClipboard.copy(configuredPairingToken());
 }
 
 function controlSnapshot() {
@@ -969,7 +975,7 @@ function registerIpc() {
   });
   ipcMain.handle("control:copy-pairing-token", (event) => {
     assertControlSender(event);
-    clipboard.writeText(configuredPairingToken());
+    copyPairingTokenToClipboard();
     return { copied: true };
   });
   ipcMain.handle("control:start-runtime", (event) => {
@@ -1251,6 +1257,7 @@ app.on("before-quit", (event) => {
   }
   shutdownStarted = true;
   quitting = true;
+  sensitiveClipboard.dispose();
   globalShortcut.unregisterAll();
   clearTimeout(boundsSaveTimer);
   if (previewTimer) clearInterval(previewTimer);

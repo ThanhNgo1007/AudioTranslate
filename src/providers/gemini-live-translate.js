@@ -1,9 +1,12 @@
+const { performance } = require("node:perf_hooks");
+
 const DEFAULT_MODEL = "gemini-3.5-live-translate-preview";
 const INPUT_MIME_TYPE = "audio/pcm;rate=16000";
 const AUDIO_CHUNK_BYTES = 3200;
 const DEFAULT_FINAL_DEBOUNCE_MS = 120;
 const DEFAULT_STARTUP_TIMEOUT_MS = 15000;
 const DEFAULT_MAX_BUFFERED_AUDIO_BYTES = 64 * 1024;
+const DEFAULT_MAX_RECONNECT_AUDIO_AGE_MS = 1000;
 const MAX_SECRET_LENGTH = 16 * 1024;
 const MAX_RESUMPTION_HANDLE_LENGTH = 64 * 1024;
 const MAX_TRANSCRIPT_CHARS = 64 * 1024;
@@ -272,8 +275,19 @@ class GeminiLiveTranslateTranslator {
     if (this.maxBufferedAudioBytes < AUDIO_CHUNK_BYTES) {
       throw new Error(`Gemini buffered-audio limit must be at least ${AUDIO_CHUNK_BYTES} bytes`);
     }
+    this.maxReconnectAudioAgeMs = positiveInteger(
+      options.maxReconnectAudioAgeMs,
+      DEFAULT_MAX_RECONNECT_AUDIO_AGE_MS,
+      "Gemini reconnect audio age limit",
+      10000,
+    );
 
     this.now = options.now || Date.now;
+    this.monotonicNow =
+      options.monotonicNow || (options.now ? options.now : () => performance.now());
+    if (typeof this.monotonicNow !== "function") {
+      throw new Error("Gemini monotonic clock must be a function");
+    }
     this.setTimer = options.setTimer || setTimeout;
     this.clearTimer = options.clearTimer || clearTimeout;
 
@@ -282,6 +296,7 @@ class GeminiLiveTranslateTranslator {
       session: { value: null, writable: true, enumerable: false },
       connectAbortController: { value: null, writable: true, enumerable: false },
       pendingAudio: { value: Buffer.alloc(0), writable: true, enumerable: false },
+      pendingAudioSegments: { value: [], writable: true, enumerable: false },
       turn: {
         value: this.createEmptyTurn(),
         writable: true,
@@ -305,6 +320,7 @@ class GeminiLiveTranslateTranslator {
     this.languageDetectionStartedAt = null;
     this.lastAudioCapturedAt = null;
     this.audioBackpressureActive = false;
+    this.reconnectDiscardedAudioBytes = 0;
     this.paused = false;
   }
 
@@ -463,16 +479,14 @@ class GeminiLiveTranslateTranslator {
       audio.fill(0);
       throw new Error("Gemini PCM16 audio must contain an even number of bytes");
     }
+    if (audio.byteLength > this.maxBufferedAudioBytes) {
+      return this.rejectAudioForBackpressure(audio);
+    }
+    if (this.state === "reconnecting") {
+      this.reconnectDiscardedAudioBytes += this.discardReconnectAudio(audio.byteLength);
+    }
     if (this.pendingAudio.byteLength + audio.byteLength > this.maxBufferedAudioBytes) {
-      audio.fill(0);
-      if (!this.audioBackpressureActive) {
-        this.audioBackpressureActive = true;
-        this.onStatus?.({
-          level: "warning",
-          message: "Bộ đệm Gemini đã đầy; tạm bỏ audio mới để giới hạn dữ liệu trong RAM",
-        });
-      }
-      return false;
+      return this.rejectAudioForBackpressure(audio);
     }
 
     const capturedAt = Number(timing.capturedAt);
@@ -485,11 +499,27 @@ class GeminiLiveTranslateTranslator {
     }
     const previous = this.pendingAudio;
     this.pendingAudio = Buffer.concat([previous, audio]);
+    this.pendingAudioSegments.push({
+      byteLength: audio.byteLength,
+      bufferedAt: this.monotonicNow(),
+    });
     previous.fill(0);
     audio.fill(0);
 
     if (this.state === "running") return this.drainAudio();
     return true;
+  }
+
+  rejectAudioForBackpressure(audio) {
+    audio.fill(0);
+    if (!this.audioBackpressureActive) {
+      this.audioBackpressureActive = true;
+      this.onStatus?.({
+        level: "warning",
+        message: "Bộ đệm Gemini đã đầy; tạm bỏ audio mới để giới hạn dữ liệu trong RAM",
+      });
+    }
+    return false;
   }
 
   drainAudio() {
@@ -501,6 +531,7 @@ class GeminiLiveTranslateTranslator {
       const previous = this.pendingAudio;
       const chunk = Buffer.from(previous.subarray(0, AUDIO_CHUNK_BYTES));
       this.pendingAudio = Buffer.from(previous.subarray(AUDIO_CHUNK_BYTES));
+      this.consumePendingAudioSegments(AUDIO_CHUNK_BYTES);
       previous.fill(0);
       if (!this.sendAudioChunk(chunk)) return false;
     }
@@ -509,6 +540,40 @@ class GeminiLiveTranslateTranslator {
       this.onStatus?.({ level: "ok", message: "Bộ đệm audio Gemini đã phục hồi" });
     }
     return true;
+  }
+
+  consumePendingAudioSegments(byteLength) {
+    let remaining = byteLength;
+    while (remaining > 0 && this.pendingAudioSegments.length > 0) {
+      const segment = this.pendingAudioSegments[0];
+      if (segment.byteLength <= remaining) {
+        remaining -= segment.byteLength;
+        this.pendingAudioSegments.shift();
+      } else {
+        segment.byteLength -= remaining;
+        remaining = 0;
+      }
+    }
+  }
+
+  discardReconnectAudio(incomingBytes = 0) {
+    const now = this.monotonicNow();
+    let discardedBytes = 0;
+    while (this.pendingAudioSegments.length > 0) {
+      const segment = this.pendingAudioSegments[0];
+      const remainingBytes = this.pendingAudio.byteLength - discardedBytes;
+      const isStale = now - segment.bufferedAt > this.maxReconnectAudioAgeMs;
+      const needsCapacity = remainingBytes + incomingBytes > this.maxBufferedAudioBytes;
+      if (!isStale && !needsCapacity) break;
+      discardedBytes += segment.byteLength;
+      this.pendingAudioSegments.shift();
+    }
+    if (discardedBytes === 0) return 0;
+
+    const previous = this.pendingAudio;
+    this.pendingAudio = Buffer.from(previous.subarray(discardedBytes));
+    previous.fill(0);
+    return discardedBytes;
   }
 
   sendAudioChunk(chunk) {
@@ -745,6 +810,7 @@ class GeminiLiveTranslateTranslator {
     }
 
     this.state = "reconnecting";
+    this.reconnectDiscardedAudioBytes = 0;
     this.onStatus?.({
       level: "warning",
       message: this.enableSessionResumption
@@ -761,7 +827,18 @@ class GeminiLiveTranslateTranslator {
         await this.openSession(handle);
         if (this.isStopping() || this.terminalSignaled) return;
         this.state = "running";
-        this.onStatus?.({ level: "ok", message: "Gemini đã khôi phục phiên dịch" });
+        const discardedBytes =
+          this.reconnectDiscardedAudioBytes + this.discardReconnectAudio();
+        this.reconnectDiscardedAudioBytes = 0;
+        if (discardedBytes > 0) {
+          const discardedMs = Math.round(discardedBytes / 32);
+          this.onStatus?.({
+            level: "warning",
+            message: `Gemini đã khôi phục; bỏ ${discardedMs} ms audio cũ để không phát lại phụ đề trễ`,
+          });
+        } else {
+          this.onStatus?.({ level: "ok", message: "Gemini đã khôi phục phiên dịch" });
+        }
         this.drainAudio();
       } catch (error) {
         this.signalTerminal(this.cleanError(error));
@@ -800,6 +877,8 @@ class GeminiLiveTranslateTranslator {
   clearSensitiveAudio() {
     this.pendingAudio.fill(0);
     this.pendingAudio = Buffer.alloc(0);
+    this.pendingAudioSegments = [];
+    this.reconnectDiscardedAudioBytes = 0;
   }
 
   setPaused(paused) {
@@ -862,4 +941,5 @@ module.exports = {
   GeminiLiveTranslator: GeminiLiveTranslateTranslator,
   AUDIO_CHUNK_BYTES,
   DEFAULT_MODEL,
+  DEFAULT_MAX_RECONNECT_AUDIO_AGE_MS,
 };

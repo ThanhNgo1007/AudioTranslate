@@ -1,6 +1,6 @@
 # Kế hoạch phát triển AudioTranslate
 
-Cập nhật: 2026-08-28. Tài liệu này chỉ liệt kê những hạng mục **chưa hoàn thiện** hoặc mới ở mức prototype. Những mục đã chạy được được ghi riêng để tránh người dùng hiểu nhầm là tính năng sẵn sàng.
+Cập nhật: 2026-08-29. Tài liệu này chỉ liệt kê những hạng mục **chưa hoàn thiện** hoặc mới ở mức prototype. Những mục đã chạy được được ghi riêng để tránh người dùng hiểu nhầm là tính năng sẵn sàng.
 
 ## Nền tảng đã có
 
@@ -11,6 +11,7 @@ Cập nhật: 2026-08-28. Tài liệu này chỉ liệt kê những hạng mục
 - Diagnostics trong app kiểm provider, key/consent, extension/pairing, privacy, runtime và cổng local mà không trả secret hoặc raw audio.
 - Overlay trong suốt có preset, kéo/khóa, font, weight, line-height, opacity, high contrast, giới hạn 1–2 dòng, tự ẩn và chọn màn hình. Gemini chỉ chốt caption tại ranh giới lượt nói; fragment được nối trong cùng câu, cửa sổ live cuộn theo hai dòng mới nhất và chỉ tự ẩn sau final.
 - Gateway chỉ bind loopback, mutual HMAC, bounded queue; API key Gemini lưu qua Electron `safeStorage` khi backend hệ điều hành an toàn.
+- Gemini reconnect chỉ gửi lại segment audio còn mới tối đa một giây; backlog cũ bị ghi đè trong RAM. Pairing token trên clipboard tự hết hạn sau 60 giây mà không xóa nội dung người dùng sao chép sau đó.
 
 ## Nguyên tắc phát triển
 

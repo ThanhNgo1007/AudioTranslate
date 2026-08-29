@@ -49,7 +49,7 @@ Tạo key cho **Gemini API project** trong Google AI Studio/Google Cloud. Thuê 
 2. Chạy desktop app, chọn **Browser tab** và ngôn ngữ trong Control Center.
 3. Xác nhận quyền riêng tư rồi nhấn **Bắt đầu dịch** trong Control Center; gateway cục bộ chỉ mở sau thao tác này.
 4. Mở tab video rồi mở popup extension.
-5. Chọn **Sao chép mã ghép nối** trong Control Center (hoặc dùng menu tray), rồi dán token vào **Kết nối nâng cao**. Raw token được Electron main đưa thẳng vào clipboard, không trả vào renderer; extension chỉ giữ secret trong browser session và dùng cho HMAC hai chiều.
+5. Chọn **Sao chép mã ghép nối** trong Control Center (hoặc dùng menu tray), rồi dán token vào **Kết nối nâng cao** trong vòng 60 giây. Raw token được Electron main đưa thẳng vào clipboard, không trả vào renderer và tự bị xóa nếu clipboard chưa chứa nội dung mới; extension chỉ giữ secret trong browser session và dùng cho HMAC hai chiều.
 6. Nhấn **Bắt đầu dịch tab này** để cấp quyền capture cho đúng tab.
 
 Gemini desktop không bắt buộc danh sách gợi ý source: chọn **Tự nhận diện** trong Control Center là đủ. Headless có thể nhận tối đa 8 gợi ý như `en`, `ja-JP`, `ko-KR` qua cấu hình tiến trình. Popup extension chỉ cấp quyền capture tab và nhập kết nối loopback/pairing; provider, source/target và cách hiển thị phụ đề được quản lý trong Control Center và không thể bị popup ghi đè.
