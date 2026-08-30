@@ -31,6 +31,8 @@ interface AudioTranslateControl {
   testProvider(provider: "gemini"): Promise<ControlCenterSnapshot | void>;
   startRuntime(): Promise<ControlCenterSnapshot | void>;
   stopRuntime(): Promise<ControlCenterSnapshot | void>;
+  runDiagnostics(): Promise<DiagnosticsReport>;
+  exportRuntimeReport(): Promise<{ outcome: "saved" | "cancelled" | "failed" }>;
   setOverlayLocked(locked: boolean): Promise<ControlCenterSnapshot | void>;
   resetOverlay(): Promise<ControlCenterSnapshot | void>;
   startFileSource(meta: FileSourceMeta): Promise<ControlCenterSnapshot | void>;
@@ -53,6 +55,8 @@ interface AudioTranslateControl {
 | `testProvider` | `control:test-provider` | Main tự đọc secret; không trả request/response có secret |
 | `startRuntime` | `control:start-runtime` | Mở pipeline Gemini sau hành động người dùng; không log payload/header |
 | `stopRuntime` | `control:stop-runtime` | Abort upstream, zero buffers, revoke tab/file handle |
+| `runDiagnostics` | `control:run-diagnostics` | Main tự thu thập trạng thái đã khử nhạy cảm; renderer không gửi context |
+| `exportRuntimeReport` | `control:export-runtime-report` | Không nhận payload/path; main dựng schema allowlist, mở Save Dialog và chỉ trả kết quả tổng quát |
 | `setOverlayLocked` | `control:set-overlay-locked` | Nhận boolean duy nhất |
 | `resetOverlay` | `control:reset-overlay` | Chỉ reset allowlisted settings |
 | `startFileSource` | `control:start-file-source` | Chỉ nhận basename/size/MIME + format PCM đích + consent; tuyệt đối không nhận path |
@@ -68,6 +72,7 @@ interface AudioTranslateControl {
 - Audio từ Chrome/Edge: extension capture đúng tab sau hành động rõ ràng của người dùng. Gateway chỉ bind loopback, bắt buộc pairing token entropy cao, chống replay bằng nonce + TTL, giới hạn một phiên/tab và kiểm tra `Origin`/protocol version.
 - File: Chromium file picker chỉ cấp một `File` object sau thao tác rõ ràng của người dùng. Không dùng/lộ absolute path; không copy vào app data. Adapter giữ `File` trong memory và chỉ tạo object URL sau khi người dùng bấm bắt đầu. Web Audio giải mã cục bộ, AudioWorklet (hoặc ScriptProcessor fallback) trộn mono, resample 16 kHz, đóng gói PCM16 đúng 3.200 byte/100 ms rồi mới chuyển qua IPC; không bao giờ gửi byte container nén thô. Buffer PCM tạm bị ghi đè sau IPC, AudioContext đóng và object URL bị revoke khi dừng/kết thúc.
 - Gemini: audio buộc phải rời máy để dịch cloud. Kết nối trực tiếp từ main/provider qua TLS; không qua renderer hoặc dịch vụ trung gian của AudioTranslate. Không log payload, transcript, headers hoặc lỗi chứa query/key.
+- Báo cáo hiệu năng: main process chỉ xuất provider/model ID đã kiểm soát, trạng thái scalar, sáu nhóm latency và token counter numeric. Không đưa caption/transcript/audio, API key, pairing token, URL, file name hay path vào JSON; file được ghi qua temp cùng thư mục, `fsync`, rename nguyên tử và mode `0600` khi hệ điều hành hỗ trợ.
 - API key: gói trả phí ChatGPT/Google AI Pro không đồng nghĩa API credit. Desktop lưu Gemini key qua Electron `safeStorage`; nếu Linux chỉ có backend `basic_text`, key chỉ tồn tại trong phiên. `.env` chỉ dành cho headless/automation, phải bị git-ignore và không được dùng làm luồng cài đặt desktop.
 - Không thể hứa “bảo mật tuyệt đối” cho hệ thống có mạng. UI cố ý công khai đường đi của dữ liệu và chỉ khẳng định các kiểm soát kỹ thuật có thể kiểm chứng.
 

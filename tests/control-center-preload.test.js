@@ -17,6 +17,9 @@ function loadPreload() {
     if (channel === "control:copy-pairing-token") {
       return { copied: true, token: "pairing-secret-must-not-cross-preload" };
     }
+    if (channel === "control:export-runtime-report") {
+      return { outcome: "saved", filePath: "/private/runtime-report.json" };
+    }
     return { ok: true };
   };
   ipcRenderer.send = (channel, payload) => ipcRenderer.sent.push({ channel, payload });
@@ -164,6 +167,18 @@ test("control preload requests diagnostics without renderer-supplied runtime or 
     channel: "control:run-diagnostics",
     payload: undefined,
   });
+});
+
+test("control preload exports a main-owned report without payload or returned path", async () => {
+  const { api, ipcRenderer } = loadPreload();
+  const result = await api.exportRuntimeReport();
+
+  assert.deepEqual(ipcRenderer.invocations.at(-1), {
+    channel: "control:export-runtime-report",
+    payload: undefined,
+  });
+  assert.deepEqual(result, { outcome: "saved" });
+  assert.doesNotMatch(JSON.stringify(result), /private|path|runtime-report\.json/i);
 });
 
 test("control preload surfaces provider language detection as a read-only event", () => {

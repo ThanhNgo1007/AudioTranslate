@@ -21,6 +21,11 @@ const { RealtimeGateway } = require("./gateway");
 const { collectDesktopDiagnostics } = require("./desktop-diagnostics");
 const { DesktopRuntimeSignals } = require("./desktop-runtime-signals");
 const { RollingRuntimeMetrics, RUNTIME_METRIC_FIELDS } = require("./runtime-metrics");
+const {
+  buildRuntimeReport,
+  serializeRuntimeReport,
+  writeRuntimeReportAtomic,
+} = require("./runtime-report");
 const { listDisplayOptions, resolveOverlayDisplay } = require("./overlay-display");
 const { createProvider } = require("./provider-factory");
 const { SecretStore, resolveSecret, resolveSecretStatus } = require("./secret-store");
@@ -993,6 +998,45 @@ function registerIpc() {
   ipcMain.handle("control:run-diagnostics", (event) => {
     assertControlSender(event);
     return collectDesktopDiagnostics(desktopDiagnosticsContext());
+  });
+  ipcMain.handle("control:export-runtime-report", async (event) => {
+    assertControlSender(event);
+    try {
+      const generatedAt = new Date().toISOString();
+      const currentRuntime = runtimeStateFromStatus(lastStatus);
+      const report = buildRuntimeReport({
+        generatedAt,
+        runtime: {
+          provider: settings?.provider,
+          model: runtimeConfig.geminiModel || "gemini-3.5-live-translate-preview",
+          sourceKind: settings?.source?.kind,
+          sourceLanguage: settings?.source?.language,
+          targetLanguage: settings?.source?.targetLanguage,
+          detectedLanguage: currentRuntime.detectedLanguage,
+          languageDetectionMs: currentRuntime.languageDetectionMs,
+          state: currentRuntime.state,
+          active: currentRuntime.active,
+          paused: currentRuntime.paused,
+          armed: currentRuntime.armed,
+          cloudConsent: settings?.cloud?.consent === GEMINI_CLOUD_CONSENT,
+        },
+        diagnostics: runtimeMetrics.snapshot(),
+      });
+      const selection = await dialog.showSaveDialog(controlWindow, {
+        title: "Xuất báo cáo hiệu năng AudioTranslate",
+        defaultPath: "AudioTranslate-runtime-report.json",
+        buttonLabel: "Lưu báo cáo",
+        filters: [{ name: "JSON", extensions: ["json"] }],
+        properties: ["showOverwriteConfirmation"],
+      });
+      if (selection.canceled || typeof selection.filePath !== "string" || !selection.filePath) {
+        return { outcome: "cancelled" };
+      }
+      writeRuntimeReportAtomic(selection.filePath, serializeRuntimeReport(report));
+      return { outcome: "saved" };
+    } catch {
+      return { outcome: "failed" };
+    }
   });
   ipcMain.handle("control:hide", (event) => {
     assertControlSender(event);

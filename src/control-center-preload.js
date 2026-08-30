@@ -30,6 +30,13 @@ contextBridge.exposeInMainWorld("audioTranslateControl", {
   setRuntimePaused: (paused) =>
     ipcRenderer.invoke("control:set-runtime-paused", { paused: paused === true }),
   runDiagnostics: () => ipcRenderer.invoke("control:run-diagnostics"),
+  async exportRuntimeReport() {
+    const result = await ipcRenderer.invoke("control:export-runtime-report");
+    const outcome = ["saved", "cancelled", "failed"].includes(result?.outcome)
+      ? result.outcome
+      : "failed";
+    return { outcome };
+  },
   hideControlCenter: () => ipcRenderer.invoke("control:hide"),
   toggleOverlay: () => ipcRenderer.invoke("control:toggle-overlay"),
   requestQuit: (confirmActive = false) =>

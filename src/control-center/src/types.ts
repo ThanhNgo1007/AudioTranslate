@@ -161,6 +161,12 @@ export interface DiagnosticsReport {
   checks: DiagnosticCheck[];
 }
 
+export type RuntimeReportOutcome = "saved" | "cancelled" | "failed";
+
+export interface RuntimeReportExportResult {
+  outcome: RuntimeReportOutcome;
+}
+
 export interface SourceSelection {
   kind: SourceKind;
 }
@@ -183,6 +189,7 @@ export interface ControlCenterAPI {
   pauseSession(): Promise<ControlCenterSnapshot>;
   resumeSession(): Promise<ControlCenterSnapshot>;
   runDiagnostics(): Promise<DiagnosticsReport>;
+  exportRuntimeReport(): Promise<RuntimeReportExportResult>;
   resetOverlay(): Promise<ControlCenterSnapshot>;
   hideControlCenter(): Promise<void>;
   toggleOverlay(): Promise<ControlCenterSnapshot>;

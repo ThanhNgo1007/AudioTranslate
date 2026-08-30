@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   describeDetectedLanguage,
   describeLatency,
+  describeRuntimeMetrics,
+  describeRuntimeUsage,
   meterSegments,
   normalizeAudioTelemetry,
   normalizeRuntimeDiagnostics,
@@ -100,4 +102,65 @@ test("runtime diagnostics normalize only bounded numeric latency summaries and u
     totalTokenCount: 150,
   });
   assert.doesNotMatch(JSON.stringify(diagnostics), /private|transcript|audio|text/i);
+});
+
+test("runtime metric rows distinguish missing, warming and observed session samples", () => {
+  const rows = describeRuntimeMetrics({
+    metrics: {
+      liveEdgeToPartialMs: { latest: 812, p50: 760, p95: 1_040, count: 1 },
+      firstReadableMs: { latest: 690, p50: 720, p95: 980, count: 6 },
+    },
+  });
+
+  assert.deepEqual(rows.map((row) => row.key), [
+    "providerPrepareMs",
+    "localQueueMs",
+    "liveEdgeToPartialMs",
+    "partialToFinalMs",
+    "resultToRafMs",
+    "firstReadableMs",
+  ]);
+  assert.deepEqual(rows[0], {
+    key: "providerPrepareMs",
+    label: "Chuẩn bị nhà cung cấp",
+    detail: "Từ lúc bắt đầu đến khi nhà cung cấp sẵn sàng",
+    latest: "—",
+    p50: "—",
+    p95: "—",
+    count: 0,
+    sampleLabel: "Chưa có mẫu",
+    state: "empty",
+  });
+  assert.deepEqual(rows[2], {
+    key: "liveEdgeToPartialMs",
+    label: "Audio đến phụ đề tạm",
+    detail: "Từ biên audio mới nhất đến bản dịch tạm đầu tiên",
+    latest: "812 ms",
+    p50: "760 ms",
+    p95: "1,04 s",
+    count: 1,
+    sampleLabel: "1 mẫu · chưa đủ để đánh giá phân vị",
+    state: "warming",
+  });
+  assert.equal(rows[5].sampleLabel, "6 mẫu");
+  assert.equal(rows[5].state, "observed");
+});
+
+test("runtime usage rows expose only named numeric token counters", () => {
+  const rows = describeRuntimeUsage({
+    usage: {
+      promptTokenCount: 1_200,
+      responseTokenCount: 300,
+      totalTokenCount: 1_500,
+      transcript: "must-not-cross",
+      apiKey: "must-not-cross",
+    },
+  });
+
+  assert.deepEqual(rows, [
+    { key: "promptTokenCount", label: "Token đầu vào", value: 1_200, displayValue: "1.200" },
+    { key: "responseTokenCount", label: "Token đầu ra", value: 300, displayValue: "300" },
+    { key: "totalTokenCount", label: "Tổng token", value: 1_500, displayValue: "1.500" },
+  ]);
+  assert.doesNotMatch(JSON.stringify(rows), /must-not-cross|transcript|apiKey/i);
 });

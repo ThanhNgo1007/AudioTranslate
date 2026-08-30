@@ -109,6 +109,7 @@ Các policy ưu tiên phụ đề hiện tại hơn transcript đầy đủ. His
 - Extension và internal file client đều phải vượt mutual HMAC nếu gateway có pairing secret mạnh.
 - API key không đi qua extension/local WebSocket. Gemini desktop key nằm trong Electron main và được `safeStorage` mã hóa khi backend hệ điều hành đủ an toàn; Linux `basic_text` fallback chỉ giữ key trong phiên.
 - Settings không nhạy cảm được ghi atomically với mode `0600` khi hệ điều hành hỗ trợ; secret record chỉ chứa ciphertext.
+- Runtime report không serialize `controlSnapshot()` hoặc dữ liệu renderer gửi lên. Main process dựng object mới từ allowlist scalar + `runtimeMetrics.snapshot()`, mở native Save Dialog, ghi temp cùng thư mục rồi rename atomically; IPC chỉ trả `saved`, `cancelled` hoặc `failed`, không trả path/lỗi native.
 - Max WebSocket payload 512 KiB; PCM phải đúng frame/độ dài, sequence và tuổi dữ liệu.
 - Cloud provider cần consent token đúng; không tự fallback từ demo/local sang cloud.
 - Audio/transcript không được ghi xuống đĩa hoặc log mặc định.
@@ -124,6 +125,8 @@ Các metric cần tách:
 3. `result_to_raf`: provider emit tới animation frame của overlay.
 4. `language_detection_latency`: auto detect/time-to-language.
 5. `stable/final_latency`: không trộn với draft.
+
+Control Center hiển thị `latest`, nearest-rank p50/p95 và `count` cho sáu series bounded tối đa 120 mẫu. Dưới 5 mẫu được gắn trạng thái đang thu thập. Đây là quan sát của thiết bị/phiên hiện tại, không phải SLA của provider. `language_detection_latency` hiện vẫn là một scalar của phiên; rolling p50/p95 cho auto-LID và benchmark golden-set được để lại trong roadmap.
 
 Acceptance criteria thiết kế:
 

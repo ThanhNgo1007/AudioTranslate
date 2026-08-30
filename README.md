@@ -193,6 +193,8 @@ Ngân sách nháp mục tiêu:
 
 Pipeline **Cân bằng/Ưu tiên chính xác** thêm một lần gọi text model nên không dùng bảng mục tiêu Live Translate làm cam kết. Telemetry đã thu local queue, first-readable, partial-to-final, usage và result-to-RAF, nhưng vẫn cần A/B bằng key/mạng/audio thật để công bố p50/p95 và chi phí. Gemini preview/Free Tier có thể thay đổi availability, quota và event timing; auto detect vẫn cần đủ speech.
 
+Trong Control Center, mở **Chẩn đoán hệ thống → Hiệu năng phiên** để xem `latest`, p50, p95 và số mẫu của sáu công đoạn. Phiên có dưới 5 mẫu được ghi rõ là đang thu thập, không được diễn giải như phân vị ổn định. Nút **Xuất báo cáo JSON** mở hộp thoại lưu của hệ điều hành; báo cáo chỉ chứa metadata scalar đã kiểm soát, latency summary và token counter numeric. Báo cáo không chứa nội dung phụ đề/audio, API key, pairing token, URL hoặc đường dẫn nguồn và được ghi bằng thay thế nguyên tử với quyền hạn chế khi hệ điều hành hỗ trợ.
+
 Giới hạn khác:
 
 - Một capture session tại một thời điểm.

@@ -2607,6 +2607,168 @@ kbd {
 .diagnostic-check em { margin-top: 4px; color: #cdbb96; font-size: 8px; font-style: normal; }
 .diagnostic-check button { border: 0; color: var(--f-amber); background: transparent; font-size: 8px; font-weight: 700; }
 
+.runtime-insights {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #353834;
+}
+
+.runtime-insights-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.runtime-insights-heading > span,
+.runtime-insights-heading strong,
+.runtime-insights-heading small {
+  display: block;
+}
+
+.runtime-insights-heading strong {
+  color: #e5e6e1;
+  font-size: 11px;
+}
+
+.runtime-insights-heading small {
+  max-width: 340px;
+  margin-top: 3px;
+  color: var(--f-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.runtime-metrics-scroll {
+  margin-top: 9px;
+  overflow-x: auto;
+  border: 1px solid #343733;
+  border-radius: 4px;
+  background: #131513;
+}
+
+.runtime-metrics-table {
+  width: 100%;
+  min-width: 0;
+  border-collapse: collapse;
+  table-layout: fixed;
+  color: var(--f-muted);
+  font-size: 10px;
+}
+
+.runtime-metrics-table th,
+.runtime-metrics-table td {
+  padding: 7px 6px;
+  border-bottom: 1px solid #2e312e;
+  text-align: right;
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+}
+
+.runtime-metrics-table thead th {
+  color: #aeb1aa;
+  background: #191b19;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.runtime-metrics-table th:first-child {
+  width: 46%;
+  text-align: left;
+}
+
+.runtime-metrics-table tbody tr:last-child th,
+.runtime-metrics-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.runtime-metrics-table tbody th strong,
+.runtime-metrics-table tbody th small {
+  display: block;
+}
+
+.runtime-metrics-table tbody th strong {
+  color: #d9dad5;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.runtime-metrics-table tbody th small {
+  margin-top: 2px;
+  color: var(--f-muted);
+  font-size: 9px;
+  font-weight: 400;
+  line-height: 1.35;
+}
+
+.runtime-metrics-table tbody tr[data-state="empty"] td,
+.runtime-metrics-table tbody tr[data-state="warming"] td {
+  color: #8b8f88;
+}
+
+.runtime-sample-state {
+  display: block;
+  margin-top: 4px;
+  color: var(--f-muted);
+  font-size: 9px;
+  line-height: 1.3;
+  text-align: left;
+}
+
+.runtime-sample-state[data-state="warming"] { color: var(--f-amber); }
+.runtime-sample-state[data-state="observed"] { color: var(--f-green); }
+
+.runtime-usage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid #343733;
+  border-radius: 4px;
+  background: #151715;
+}
+
+.runtime-usage > span:first-child strong,
+.runtime-usage > span:first-child small {
+  display: block;
+}
+
+.runtime-usage > span:first-child strong { color: #dfe0db; font-size: 10px; }
+.runtime-usage > span:first-child small { margin-top: 2px; color: var(--f-muted); font-size: 9px; }
+
+.runtime-usage-values {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.runtime-usage-values > span {
+  min-width: 55px;
+  padding: 4px 6px;
+  border-radius: 3px;
+  color: var(--f-muted);
+  background: #20231f;
+  text-align: right;
+}
+
+.runtime-usage-values small,
+.runtime-usage-values b { display: block; }
+.runtime-usage-values small { font-size: 9px; }
+.runtime-usage-values b { margin-top: 1px; color: #e3e4df; font-size: 11px; font-variant-numeric: tabular-nums; }
+.runtime-usage-empty { color: var(--f-muted); font-size: 9px; }
+
+.runtime-report-notice {
+  margin: 7px 0 0;
+  color: var(--f-green);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
 .start-help {
   margin: 6px 0 0;
   color: var(--f-dim);

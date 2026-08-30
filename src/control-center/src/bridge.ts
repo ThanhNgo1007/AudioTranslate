@@ -15,7 +15,7 @@ import { stopOwnedFileStreamer } from "./file-streamer-lifecycle.mjs";
 import { buildNativeOverlayPatch } from "./overlay-update.mjs";
 import { normalizeOverlaySettings } from "./overlay-snapshot.mjs";
 import { rendererOwnedSourceLabel } from "./source-display.mjs";
-import { normalizeAudioTelemetry } from "./runtime-insights.mjs";
+import { normalizeAudioTelemetry, normalizeRuntimeDiagnostics } from "./runtime-insights.mjs";
 import { normalizeDiagnosticsReport } from "./diagnostics-display.mjs";
 
 interface FileSourceMeta {
@@ -41,6 +41,7 @@ interface NativeControlCenterAPI {
   stopRuntime(): Promise<unknown>;
   setRuntimePaused(paused: boolean): Promise<unknown>;
   runDiagnostics(): Promise<unknown>;
+  exportRuntimeReport(): Promise<unknown>;
   hideControlCenter(): Promise<unknown>;
   toggleOverlay(): Promise<unknown>;
   requestQuit(confirmActive?: boolean): Promise<unknown>;
@@ -225,6 +226,7 @@ function normalizeSnapshot(rawValue: unknown): ControlCenterSnapshot {
       canPause: runtime.canPause === true,
       canResume: runtime.canResume === true,
       canStop: runtime.canStop === true,
+      diagnostics: normalizeRuntimeDiagnostics(runtime.diagnostics),
     },
   };
 }
@@ -557,6 +559,13 @@ function createNativeClient(nativeClient: NativeControlCenterAPI): ControlCenter
     async runDiagnostics() {
       return normalizeDiagnosticsReport(await nativeClient.runDiagnostics());
     },
+    async exportRuntimeReport() {
+      const result = recordOf(await nativeClient.exportRuntimeReport());
+      const outcome = ["saved", "cancelled", "failed"].includes(String(result.outcome))
+        ? result.outcome as "saved" | "cancelled" | "failed"
+        : "failed";
+      return { outcome };
+    },
     resetOverlay: () => withLatestSnapshot(() => nativeClient.resetOverlay()),
     async hideControlCenter() {
       await nativeClient.hideControlCenter();
@@ -806,6 +815,10 @@ function createMockClient(): ControlCenterClient {
         ],
       });
     },
+    async exportRuntimeReport() {
+      await wait();
+      return { outcome: "saved" };
+    },
     async hideControlCenter() {
       snapshot.app.controlVisible = false;
       publish();
@@ -867,6 +880,7 @@ function createUnavailableClient(): ControlCenterClient {
     pauseSession: reject,
     resumeSession: reject,
     runDiagnostics: reject,
+    exportRuntimeReport: reject,
     resetOverlay: reject,
     hideControlCenter: reject,
     toggleOverlay: reject,

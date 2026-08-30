@@ -651,7 +651,7 @@ git commit -m "test: add live caption benchmark harness"
 - [ ] Output partials render immediately; final debounce never blocks a partial.
 - [ ] Captions use one continuous block, at most two pixel-measured lines, with safe overflow and pause reset.
 - [ ] Fastest mode shows translated text only.
-- [ ] Runtime diagnostics expose bounded latest/p50/p95/count and usage metadata without content.
+- [x] Runtime diagnostics expose bounded latest/p50/p95/count and usage metadata without content; Control Center can export a main-owned redacted JSON report atomically.
 - [ ] 429/`RESOURCE_EXHAUSTED` stops safely with no paid fallback.
 - [ ] API keys remain in the Electron main process and never appear in extension messages/logs.
 - [ ] `npm run verify` passes.

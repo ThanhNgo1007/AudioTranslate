@@ -46,7 +46,13 @@ import { getControlCenterClient } from "./bridge";
 import { sourceLanguageOptions, targetLanguageOptions } from "./language-options.mjs";
 import previewScene from "./assets/preview-scene.png";
 import { describeSessionDisplay } from "./session-display.mjs";
-import { describeDetectedLanguage, describeLatency, meterSegments } from "./runtime-insights.mjs";
+import {
+  describeDetectedLanguage,
+  describeLatency,
+  describeRuntimeMetrics,
+  describeRuntimeUsage,
+  meterSegments,
+} from "./runtime-insights.mjs";
 import { describeTransportControls } from "./transport-controls.mjs";
 import { diagnosticActionTarget, describeDiagnosticsOverall } from "./diagnostics-display.mjs";
 import type {
@@ -119,6 +125,7 @@ type BusyAction =
   | "session"
   | "pause"
   | "diagnostics"
+  | "export-report"
   | "app"
   | "reset"
   | null;
@@ -240,6 +247,7 @@ export function App() {
   const [uiError, setUiError] = useState<string | null>(null);
   const [pairingCopied, setPairingCopied] = useState(false);
   const [diagnostics, setDiagnostics] = useState<DiagnosticsReport | null>(null);
+  const [reportNotice, setReportNotice] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<"translate" | "providers" | "overlay" | "privacy" | "diagnostics">("translate");
   const editingOverlay = snapshot.overlay.clickThrough === false;
 
@@ -304,6 +312,8 @@ export function App() {
     : meterSegments(snapshot.audio.rms, 28);
   const audioLossCount = snapshot.audio.packetGapCount + snapshot.audio.droppedFrames;
   const diagnosticsOverall = diagnostics ? describeDiagnosticsOverall(diagnostics.overall) : null;
+  const runtimeMetricRows = describeRuntimeMetrics(snapshot.session.diagnostics);
+  const runtimeUsageRows = describeRuntimeUsage(snapshot.session.diagnostics);
 
   async function runAction(
     name: Exclude<BusyAction, null>,
@@ -409,6 +419,24 @@ export function App() {
       setActiveView("diagnostics");
     } catch (error) {
       setUiError(error instanceof Error ? error.message : "Không thể kiểm tra hệ thống");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function exportRuntimeReport() {
+    setBusy("export-report");
+    setUiError(null);
+    setReportNotice(null);
+    try {
+      const result = await client.exportRuntimeReport();
+      if (result.outcome === "saved") {
+        setReportNotice("Đã lưu báo cáo JSON không chứa nội dung phụ đề hoặc dữ liệu bí mật.");
+      } else if (result.outcome === "failed") {
+        setUiError("Không thể xuất báo cáo hiệu năng. Hãy kiểm tra quyền ghi của thư mục đã chọn.");
+      }
+    } catch (error) {
+      setUiError(error instanceof Error ? error.message : "Không thể xuất báo cáo hiệu năng");
     } finally {
       setBusy(null);
     }
@@ -733,6 +761,53 @@ export function App() {
                 })}
               </div>
             </>}
+
+            <section className="runtime-insights" aria-labelledby="runtime-insights-title">
+              <div className="runtime-insights-heading">
+                <span>
+                  <strong id="runtime-insights-title">Hiệu năng phiên</strong>
+                  <small>Đo trên thiết bị và phiên hiện tại; không phải cam kết SLA của Google.</small>
+                </span>
+                <button className="button secondary compact" type="button" disabled={busy !== null} onClick={() => void exportRuntimeReport()}>
+                  {busy === "export-report" ? <CircleNotch className="spinner" size={14} /> : <ArrowLineDown size={14} />}
+                  Xuất báo cáo JSON
+                </button>
+              </div>
+
+              <div className="runtime-metrics-scroll">
+                <table className="runtime-metrics-table">
+                  <caption className="sr-only">Số liệu độ trễ quan sát theo mili giây trong phiên hiện tại</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Công đoạn</th>
+                      <th scope="col">Mới nhất</th>
+                      <th scope="col">p50</th>
+                      <th scope="col">p95</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {runtimeMetricRows.map((row) => <tr key={row.key} data-state={row.state}>
+                      <th scope="row">
+                        <strong>{row.label}</strong>
+                        <small>{row.detail}</small>
+                        <span className="runtime-sample-state" data-state={row.state}>{row.sampleLabel}</span>
+                      </th>
+                      <td aria-label={row.latest === "—" ? `${row.label}: chưa có dữ liệu mới nhất` : `${row.label}, mới nhất ${row.latest}`}>{row.latest}</td>
+                      <td aria-label={row.p50 === "—" ? `${row.label}: chưa có p50` : `${row.label}, p50 ${row.p50}`}>{row.p50}</td>
+                      <td aria-label={row.p95 === "—" ? `${row.label}: chưa có p95` : `${row.label}, p95 ${row.p95}`}>{row.p95}</td>
+                    </tr>)}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="runtime-usage" aria-label="Usage token của phiên">
+                <span><strong>Usage phiên</strong><small>Chỉ hiển thị bộ đếm numeric do provider trả về.</small></span>
+                {runtimeUsageRows.length > 0
+                  ? <span className="runtime-usage-values">{runtimeUsageRows.map((row) => <span key={row.key}><small>{row.label}</small><b>{row.displayValue}</b></span>)}</span>
+                  : <span className="runtime-usage-empty">Chưa có usage metadata</span>}
+              </div>
+              {reportNotice && <p className="runtime-report-notice" role="status" aria-live="polite">{reportNotice}</p>}
+            </section>
           </section>
         </aside>
       </main>

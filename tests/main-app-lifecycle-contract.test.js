@@ -74,6 +74,28 @@ test("desktop pause and diagnostics IPC stay behind the exact Control Center sen
   );
 });
 
+test("runtime report export is sender-guarded and uses only main-owned metrics", () => {
+  const start = source.indexOf("function registerIpc");
+  assert.notEqual(start, -1);
+  const body = source.slice(start, source.indexOf("function startPreview", start));
+  const handler = body.match(
+    /ipcMain\.handle\("control:export-runtime-report",[\s\S]*?\n  \}\);/,
+  )?.[0] || "";
+
+  assert.match(handler, /assertControlSender\(event\)/);
+  assert.match(handler, /runtimeMetrics\.snapshot\(\)/);
+  assert.match(handler, /buildRuntimeReport/);
+  assert.match(handler, /dialog\.showSaveDialog/);
+  assert.match(handler, /writeRuntimeReportAtomic/);
+  assert.doesNotMatch(handler, /payload|controlSnapshot\(\)|return\s+\{[^}]*filePath/);
+
+  const guardIndex = handler.indexOf("assertControlSender(event)");
+  const tryIndex = handler.indexOf("try {");
+  const reportIndex = handler.indexOf("buildRuntimeReport");
+  assert.ok(guardIndex >= 0 && guardIndex < tryIndex, "sender guard must run before error handling");
+  assert.ok(tryIndex >= 0 && tryIndex < reportIndex, "report construction must fail closed inside try");
+});
+
 test("saved multi-display selection is exposed safely and triggers real overlay repositioning", () => {
   assert.match(source, /listDisplayOptions\(screen\.getAllDisplays\(\), screen\.getPrimaryDisplay\(\)\.id\)/);
   assert.match(source, /resolveOverlayDisplay\(screen\.getAllDisplays\(\), settings\?\.overlay\?\.displayId, fallback\)/);

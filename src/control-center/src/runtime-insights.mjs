@@ -46,6 +46,48 @@ const USAGE_COUNTER_FIELDS = [
   "toolUsePromptTokenCount",
 ];
 
+const RUNTIME_METRIC_DEFINITIONS = [
+  {
+    key: "providerPrepareMs",
+    label: "Chuẩn bị nhà cung cấp",
+    detail: "Từ lúc bắt đầu đến khi nhà cung cấp sẵn sàng",
+  },
+  {
+    key: "localQueueMs",
+    label: "Hàng đợi audio cục bộ",
+    detail: "Tuổi của audio khi đi qua gateway trên máy",
+  },
+  {
+    key: "liveEdgeToPartialMs",
+    label: "Audio đến phụ đề tạm",
+    detail: "Từ biên audio mới nhất đến bản dịch tạm đầu tiên",
+  },
+  {
+    key: "partialToFinalMs",
+    label: "Phụ đề tạm đến bản chốt",
+    detail: "Thời gian từ bản tạm đầu tiên đến câu hoàn chỉnh",
+  },
+  {
+    key: "resultToRafMs",
+    label: "Kết quả đến khi hiển thị",
+    detail: "Từ kết quả renderer nhận được đến khung hình kế tiếp",
+  },
+  {
+    key: "firstReadableMs",
+    label: "Phụ đề đọc được đầu tiên",
+    detail: "Từ lúc bắt đầu phiên đến phụ đề đầu tiên có thể đọc",
+  },
+];
+
+const USAGE_COUNTER_DEFINITIONS = [
+  { key: "promptTokenCount", label: "Token đầu vào" },
+  { key: "responseTokenCount", label: "Token đầu ra" },
+  { key: "totalTokenCount", label: "Tổng token" },
+  { key: "cachedContentTokenCount", label: "Token cache" },
+  { key: "thoughtsTokenCount", label: "Token suy luận" },
+  { key: "toolUsePromptTokenCount", label: "Token công cụ" },
+];
+
 function recordOf(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
@@ -82,6 +124,50 @@ export function normalizeRuntimeDiagnostics(value) {
     if (counter !== null) usage[field] = counter;
   }
   return { metrics, usage };
+}
+
+function formatMilliseconds(value) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return "—";
+  const rounded = Math.round(value);
+  if (rounded < 1_000) return `${rounded} ms`;
+  return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(rounded / 1_000)} s`;
+}
+
+export function describeRuntimeMetrics(value) {
+  const diagnostics = normalizeRuntimeDiagnostics(value) || normalizeRuntimeDiagnostics({});
+  return RUNTIME_METRIC_DEFINITIONS.map((definition) => {
+    const summary = diagnostics.metrics[definition.key];
+    const state = summary.count === 0 ? "empty" : summary.count < 5 ? "warming" : "observed";
+    const sampleLabel = summary.count === 0
+      ? "Chưa có mẫu"
+      : summary.count < 5
+        ? `${summary.count} mẫu · chưa đủ để đánh giá phân vị`
+        : `${summary.count} mẫu`;
+    return {
+      ...definition,
+      latest: formatMilliseconds(summary.latest),
+      p50: formatMilliseconds(summary.p50),
+      p95: formatMilliseconds(summary.p95),
+      count: summary.count,
+      sampleLabel,
+      state,
+    };
+  });
+}
+
+export function describeRuntimeUsage(value) {
+  const diagnostics = normalizeRuntimeDiagnostics(value);
+  if (!diagnostics) return [];
+  const numberFormatter = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 });
+  return USAGE_COUNTER_DEFINITIONS.flatMap((definition) => {
+    const value = diagnostics.usage[definition.key];
+    if (typeof value !== "number") return [];
+    return [{
+      ...definition,
+      value,
+      displayValue: numberFormatter.format(value),
+    }];
+  });
 }
 
 export function normalizeAudioTelemetry(value = {}) {

@@ -1,6 +1,6 @@
 # Kế hoạch phát triển AudioTranslate
 
-Cập nhật: 2026-08-29. Tài liệu này chỉ liệt kê những hạng mục **chưa hoàn thiện** hoặc mới ở mức prototype. Những mục đã chạy được được ghi riêng để tránh người dùng hiểu nhầm là tính năng sẵn sàng.
+Cập nhật: 2026-08-30. Tài liệu này chỉ liệt kê những hạng mục **chưa hoàn thiện** hoặc mới ở mức prototype. Những mục đã chạy được được ghi riêng để tránh người dùng hiểu nhầm là tính năng sẵn sàng.
 
 ## Nền tảng đã có
 
@@ -9,6 +9,7 @@ Cập nhật: 2026-08-29. Tài liệu này chỉ liệt kê những hạng mục
 - Tự nhận diện ngôn ngữ nguồn, thời gian khóa ngôn ngữ, độ trễ caption, RMS/peak, speech/silence, queue, packet gap và dropped frame đã được đưa lên Control Center.
 - Pause/resume giữ phiên capture nhưng chặn và xóa audio đang chờ trước provider; stop/error đóng phiên và xóa queue.
 - Diagnostics trong app kiểm provider, key/consent, extension/pairing, privacy, runtime và cổng local mà không trả secret hoặc raw audio.
+- Dashboard “Hiệu năng phiên” đã hiển thị latest/p50/p95/count cho sáu tầng runtime và usage token allowlist. JSON export được dựng hoàn toàn ở main process, không nhận path/payload từ renderer và không chứa caption/audio/secret/URL/path.
 - Overlay trong suốt có preset, kéo/khóa, font, weight, line-height, opacity, high contrast, giới hạn 1–2 dòng, tự ẩn và chọn màn hình. Gemini chỉ chốt caption tại ranh giới lượt nói; fragment được nối trong cùng câu, cửa sổ live cuộn theo hai dòng mới nhất và chỉ tự ẩn sau final.
 - Gateway chỉ bind loopback, mutual HMAC, bounded queue; API key Gemini lưu qua Electron `safeStorage` khi backend hệ điều hành an toàn.
 - Gemini reconnect chỉ gửi lại segment audio còn mới tối đa một giây; backlog cũ bị ghi đè trong RAM. Pairing token trên clipboard tự hết hạn sau 60 giây mà không xóa nội dung người dùng sao chép sau đó.
@@ -26,7 +27,8 @@ Cập nhật: 2026-08-29. Tài liệu này chỉ liệt kê những hạng mục
 ### 2.1 Benchmark và caption ổn định
 
 - Ghi timestamp theo từng tầng: capture, gateway, provider event, Electron IPC và paint.
-- Dashboard p50/p95 riêng cho draft, final và time-to-language; export báo cáo JSON đã khử thông tin nhạy cảm.
+- Bổ sung rolling p50/p95 riêng cho `language_detection_latency`; dashboard/runtime JSON cho sáu series latency và scalar time-to-language hiện đã có.
+- Xây benchmark harness offline + golden-set thật để so sánh fixed-language/auto-language; JSON runtime hiện tại chỉ là số liệu quan sát, chưa đủ làm performance claim.
 - Committed-prefix + mutable-tail để giảm nhấp nháy; loại kết quả sai generation hoặc đến trễ.
 - History có thể mở lại toàn bộ câu final: live overlay chủ động chỉ giữ hai dòng mới nhất, vì vậy phần đã cuộn ra phải còn trong history/đánh dấu xem lại thay vì biến mất vĩnh viễn.
 - Layout tiếp tục thích ứng theo chiều cao cửa sổ, DPI, font và line-height; giới hạn hai dòng đã có nhưng vẫn cần kiểm thử tổ hợp cỡ chữ lớn trên nhiều scale factor.

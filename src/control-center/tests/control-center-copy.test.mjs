@@ -44,3 +44,33 @@ test("the native bridge preserves the paused runtime state", () => {
   const source = fs.readFileSync(path.join(directory, "..", "src", "bridge.ts"), "utf8");
   assert.match(source, /new Set\(\["idle", "connecting", "listening", "paused", "stopping", "error"\]\)/);
 });
+
+test("Control Center shows observed session percentiles and privacy-safe JSON export", () => {
+  const source = fs.readFileSync(path.join(directory, "..", "src", "FidelityApp.tsx"), "utf8");
+  const bridge = fs.readFileSync(path.join(directory, "..", "src", "bridge.ts"), "utf8");
+
+  assert.match(source, /Hiệu năng phiên/);
+  assert.match(source, /Mới nhất/);
+  assert.match(source, /p50/);
+  assert.match(source, /p95/);
+  assert.match(source, /không phải cam kết SLA của Google/);
+  assert.match(source, /Xuất báo cáo JSON/);
+  assert.match(source, /client\.exportRuntimeReport\(\)/);
+  assert.match(bridge, /diagnostics:\s*normalizeRuntimeDiagnostics\(runtime\.diagnostics\)/);
+});
+
+test("runtime metrics table keeps sample status readable without a squeezed fifth column", () => {
+  const source = fs.readFileSync(path.join(directory, "..", "src", "FidelityApp.tsx"), "utf8");
+  const css = fs.readFileSync(path.join(directory, "..", "src", "styles.css"), "utf8");
+  const tableRule = css.match(/\.runtime-metrics-table\s*\{[\s\S]*?\}/)?.[0] || "";
+  const detailRules = [...css.matchAll(/\.runtime-metrics-table tbody th small\s*\{[\s\S]*?\}/g)];
+  const detailRule = detailRules.at(-1)?.[0] || "";
+
+  assert.match(tableRule, /min-width:\s*0/);
+  assert.doesNotMatch(tableRule, /min-width:\s*[1-9]\d*px/);
+  assert.doesNotMatch(source, /<th scope="col">Mẫu<\/th>/);
+  assert.match(source, /<th scope="row">[\s\S]*?runtime-sample-state[\s\S]*?<\/th>/);
+  assert.match(tableRule, /font-size:\s*10px/);
+  assert.match(detailRule, /color:\s*var\(--f-muted\)/);
+  assert.match(detailRule, /font-size:\s*9px/);
+});
